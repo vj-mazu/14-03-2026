@@ -232,7 +232,7 @@ router.put('/users/:id/credentials', auth, authorize('admin'), async (req, res) 
                     where: {
                         [Op.and]: [
                             sqlWhere(
-                                fn('LOWER', fn('REGEXP_REPLACE', fn('COALESCE', col('fullName'), ''), '\\s+', ' ', 'g')),
+                                fn('LOWER', fn('REGEXP_REPLACE', fn('COALESCE', col('full_name'), ''), '\\s+', ' ', 'g')),
                                 normalizedFullName
                             ),
                             { id: { [Op.ne]: id } }
@@ -338,9 +338,13 @@ router.put('/users/:id/role', auth, authorize('admin'), async (req, res) => {
         }
 
         const updateData = { role };
-        // Update staffType if provided (mill or location)
-        if (staffType) {
+        // Update staffType if provided (mill or location) — only for staff role
+        if (role === 'staff' && staffType) {
             updateData.staffType = staffType;
+        } else if (role !== 'staff') {
+            // Clear staff-specific fields when changing away from staff
+            updateData.staffType = null;
+            updateData.qualityName = null;
         }
         await user.update(updateData);
 

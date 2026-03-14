@@ -234,7 +234,7 @@ const RiceSampleEntry: React.FC<{ defaultTab?: 'RICE_SAMPLE' | 'RICE_BOOK' }> = 
         const usersResponse = await axios.get<{ success: boolean, users: Array<{ qualityName: string | null, role?: string, isActive?: boolean }> }>(`${API_URL}/admin/users`, { headers });
         if (usersResponse.data.success) {
           const qNames = usersResponse.data.users
-            .filter((u: any) => u.isActive !== false && u.role !== 'admin' && u.qualityName && u.qualityName.trim() !== '')
+            .filter((u: any) => u.isActive !== false && u.role === 'staff' && u.role !== 'admin' && u.qualityName && u.qualityName.trim() !== '')
             .map((u: any) => u.qualityName.trim());
           setQualityUsers(Array.from(new Set(qNames)));
         }

@@ -302,6 +302,19 @@ const Locations: React.FC = () => {
   const [editingHamaliRates, setEditingHamaliRates] = useState(false);
 
   const canEdit = user?.role === 'manager' || user?.role === 'admin';
+  const toTitleCase = (value?: string | null) => {
+    const str = typeof value === 'string' ? value.trim() : '';
+    if (!str) return '';
+    return str.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+  };
+  const notifyLocationsUpdated = () => {
+    try {
+      localStorage.setItem('locationsUpdatedAt', Date.now().toString());
+    } catch (err) {
+      console.warn('Failed to persist locations update signal', err);
+    }
+    window.dispatchEvent(new Event('locations:updated'));
+  };
 
   useEffect(() => {
     fetchWarehouses();
@@ -549,6 +562,7 @@ const Locations: React.FC = () => {
 
       setVarietyName('');
       fetchVarieties();
+      notifyLocationsUpdated();
     } catch (error: any) {
       toast.error(error.response?.data?.error || (editingVariety ? 'Failed to update variety' : 'Failed to create variety'));
     }
@@ -880,7 +894,8 @@ const Locations: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get<{ brokers: any[] }>('/locations/brokers', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { t: Date.now() }
       });
       setBrokers(response.data.brokers || []);
     } catch (error) {
@@ -923,6 +938,7 @@ const Locations: React.FC = () => {
       setBrokerDescription('');
       setEditingBroker(null);
       fetchBrokers();
+      notifyLocationsUpdated();
     } catch (error: any) {
       toast.error(error.response?.data?.error || (editingBroker ? 'Failed to update broker' : 'Failed to create broker'));
     }
@@ -945,6 +961,7 @@ const Locations: React.FC = () => {
       });
       toast.success('Broker deleted successfully!');
       fetchBrokers();
+      notifyLocationsUpdated();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to delete broker');
     }
@@ -1115,7 +1132,7 @@ const Locations: React.FC = () => {
                     <tbody>
                       {varieties.map((variety) => (
                         <tr key={variety.id}>
-                          <Td>{variety.name}</Td>
+                          <Td>{toTitleCase(variety.name)}</Td>
                           {canEdit && (
                             <Td>
                               <ActionButtons>
@@ -1677,7 +1694,7 @@ const Locations: React.FC = () => {
                     <tbody>
                       {brokers.map((broker) => (
                         <tr key={broker.id}>
-                          <Td>{broker.name}</Td>
+                          <Td>{toTitleCase(broker.name)}</Td>
                           <Td>{broker.description || '-'}</Td>
                           {canEdit && (
                             <Td>

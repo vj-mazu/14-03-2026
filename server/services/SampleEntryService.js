@@ -362,27 +362,47 @@ class SampleEntryService {
       const userRole = currentUser?.role || 'staff';
 
       // One-time edit restriction for staff:
-      // We only allow ONE edit for any of the critical fields per entry.
-      // Critical fields: Party Name, Bags, Broker Name, and Variety.
+      // Any edit in the entry edit modal consumes the single staff edit allowance.
       const limitedRoles = new Set(['staff', 'physical_supervisor', 'paddy_supervisor']);
       if (limitedRoles.has(userRole)) {
         const normalizeText = (value) => String(value ?? '').trim().toLowerCase();
+        const normalizeBool = (value) => {
+          if (typeof value === 'boolean') return value;
+          const normalized = String(value ?? '').trim().toLowerCase();
+          if (['true', '1', 'yes', 'y'].includes(normalized)) return true;
+          if (['false', '0', 'no', 'n'].includes(normalized)) return false;
+          return false;
+        };
         const hasChanged = (field, newVal, oldVal) => {
           if (field === 'bags') return Number(newVal) !== Number(oldVal);
+          if (['sampleGivenToOffice', 'smellHas'].includes(field)) return normalizeBool(newVal) !== normalizeBool(oldVal);
           return normalizeText(newVal) !== normalizeText(oldVal);
         };
 
-        const changedFields = [];
-        if (updates.partyName !== undefined && hasChanged('partyName', updates.partyName, currentEntry.partyName)) {
-          changedFields.push('Party Name');
-        }
-        if (updates.bags !== undefined && !isNaN(Number(updates.bags)) && hasChanged('bags', updates.bags, currentEntry.bags)) {
-          changedFields.push('Bags');
-        }
+        const editableFields = [
+          'partyName',
+          'bags',
+          'brokerName',
+          'variety',
+          'location',
+          'packaging',
+          'lorryNumber',
+          'entryDate',
+          'sampleCollectedBy',
+          'sampleGivenToOffice',
+          'smellHas',
+          'smellType',
+          'gpsCoordinates'
+        ];
+
+        const changedFields = editableFields.filter((field) => {
+          if (updates[field] === undefined) return false;
+          return hasChanged(field, updates[field], currentEntry[field]);
+        });
 
         if (changedFields.length > 0) {
           if (currentEntry.staffPartyNameEdits >= 1) {
-            throw new Error(`This entry details can only be edited once by staff. Your previous edit to ${changedFields.join(', ')} has already consumed the allowance.`);
+            throw new Error('This entry can only be edited once by staff. Please contact admin/manager for further changes.');
           }
           updates.staffPartyNameEdits = (currentEntry.staffPartyNameEdits || 0) + 1;
         }

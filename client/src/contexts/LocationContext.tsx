@@ -114,7 +114,8 @@ export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) 
       setIsLoading(true);
       const token = localStorage.getItem('token');
       const response = await axios.get('/locations/varieties', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { t: Date.now() }
       });
       const data = response.data as { varieties: Variety[] };
       setVarieties(data.varieties || []);
@@ -130,7 +131,8 @@ export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) 
       setIsLoading(true);
       const token = localStorage.getItem('token');
       const response = await axios.get('/locations/rice-varieties', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { t: Date.now() }
       });
       const data = response.data as { varieties: RiceVariety[] };
       setRiceVarieties(data.varieties || []);

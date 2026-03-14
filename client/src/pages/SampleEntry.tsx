@@ -48,6 +48,8 @@ const SampleEntryPage: React.FC<{
   const [expandedEntryId, setExpandedEntryId] = useState<number | null>(null);
   const [qualityUsers, setQualityUsers] = useState<string[]>([]);
   const submissionLocksRef = useRef<Set<string>>(new Set());
+  const loadDropdownDataRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const loadEntriesRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Sample Collected By — radio state
   const [sampleCollectType, setSampleCollectType] = useState<'broker' | 'supervisor'>('broker');
@@ -341,6 +343,12 @@ const SampleEntryPage: React.FC<{
   }, [page]);
 
   useEffect(() => {
+    if (showModal || showEditModal) {
+      loadDropdownData();
+    }
+  }, [showModal, showEditModal]);
+
+  useEffect(() => {
     if (page === 1) {
       loadEntries();
     } else {
@@ -410,6 +418,33 @@ const SampleEntryPage: React.FC<{
     }
   };
 
+  useEffect(() => {
+    loadEntriesRef.current = () => loadEntries();
+  }, [loadEntries]);
+
+  useEffect(() => {
+    loadDropdownDataRef.current = loadDropdownData;
+  }, [loadDropdownData]);
+
+  useEffect(() => {
+    const handleLocationsUpdated = () => {
+      loadDropdownDataRef.current();
+      loadEntriesRef.current();
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'locationsUpdatedAt') {
+        loadDropdownDataRef.current();
+        loadEntriesRef.current();
+      }
+    };
+    window.addEventListener('locations:updated', handleLocationsUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('locations:updated', handleLocationsUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   const handleApplyFilters = () => {
     if (page === 1) {
       loadEntries(1);
@@ -418,18 +453,24 @@ const SampleEntryPage: React.FC<{
     }
   };
 
-  const loadDropdownData = async () => {
+  async function loadDropdownData() {
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
 
       // Fetch varieties from locations API
-      const varietiesResponse = await axios.get<{ varieties: Array<{ name: string }> }>(`${API_URL}/locations/varieties`, { headers });
+      const varietiesResponse = await axios.get<{ varieties: Array<{ name: string }> }>(`${API_URL}/locations/varieties`, {
+        headers,
+        params: { t: Date.now() }
+      });
       const varietyNames = Array.from(new Set(varietiesResponse.data.varieties.map((v) => toTitleCase(v.name))));
       setVarieties(varietyNames);
 
       // Fetch brokers from locations API (new broker endpoint)
-      const brokersResponse = await axios.get<{ brokers: Array<{ name: string }> }>(`${API_URL}/locations/brokers`, { headers });
+      const brokersResponse = await axios.get<{ brokers: Array<{ name: string }> }>(`${API_URL}/locations/brokers`, {
+        headers,
+        params: { t: Date.now() }
+      });
       const brokerNames = Array.from(new Set(brokersResponse.data.brokers.map((b) => toTitleCase(b.name))));
       setBrokers(brokerNames);
 
@@ -438,7 +479,7 @@ const SampleEntryPage: React.FC<{
         const usersResponse = await axios.get<{ success: boolean, users: Array<{ qualityName: string | null, role?: string, isActive?: boolean }> }>(`${API_URL}/admin/users`, { headers });
         if (usersResponse.data.success) {
           const qNames = usersResponse.data.users
-            .filter((u: any) => u.isActive !== false && u.qualityName && u.qualityName.trim() !== '' && u.username?.toLowerCase() !== 'admin' && u.qualityName.toLowerCase() !== 'admin')
+            .filter((u: any) => u.isActive !== false && u.qualityName && u.qualityName.trim() !== '' && u.role === 'staff' && u.username?.toLowerCase() !== 'admin' && u.qualityName.toLowerCase() !== 'admin')
             .map((u: any) => u.qualityName.trim())
             .sort((a: string, b: string) => a.localeCompare(b));
           setQualityUsers(Array.from(new Set(qNames)));
@@ -459,7 +500,7 @@ const SampleEntryPage: React.FC<{
     } catch (error: any) {
       console.error('Failed to load dropdown data:', error);
     }
-  };
+  }
 
   // GPS Capture logic
   const handleCaptureGps = () => {
@@ -574,6 +615,7 @@ const SampleEntryPage: React.FC<{
 
   // Open edit modal for a staff entry
   const handleEditEntry = (entry: SampleEntry) => {
+    loadDropdownData();
     setEditingEntry(entry);
     // Get bags value - handle both number and string types
     const bagsValue = typeof entry.bags === 'number' ? entry.bags.toString() : (entry.bags || '');
@@ -584,8 +626,8 @@ const SampleEntryPage: React.FC<{
 
     setFormData({
       entryDate: entry.entryDate?.split('T')[0] || new Date().toISOString().split('T')[0],
-      brokerName: entry.brokerName || '',
-      variety: entry.variety || '',
+      brokerName: toTitleCase(entry.brokerName || ''),
+      variety: toTitleCase(entry.variety || ''),
       partyName: entry.partyName || '',
       location: entry.location || '',
       bags: bagsValue,
@@ -652,11 +694,33 @@ const SampleEntryPage: React.FC<{
     }
   };
 
+  const brokerOptions = useMemo(() => {
+    const list = [...brokers];
+    const current = (formData.brokerName || '').trim();
+    if (current && !list.some((b) => b.toLowerCase() === current.toLowerCase())) {
+      list.push(current);
+    }
+    return list;
+  }, [brokers, formData.brokerName]);
+
+  const varietyOptions = useMemo(() => {
+    const list = [...varieties];
+    const current = (formData.variety || '').trim();
+    if (current && !list.some((v) => v.toLowerCase() === current.toLowerCase())) {
+      list.push(current);
+    }
+    return list;
+  }, [varieties, formData.variety]);
+
 
 
   // Title case handler
   const handleInputChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: toTitleCase(value) });
+    if (field === 'location' || field === 'partyName') {
+      setFormData(prev => ({ ...prev, [field]: value }));
+      return;
+    }
+    setFormData(prev => ({ ...prev, [field]: toTitleCase(value) }));
   };
 
   const resetQualityForm = () => {
@@ -923,6 +987,7 @@ const SampleEntryPage: React.FC<{
           {filterEntryType === 'RICE_SAMPLE' ? (
             <button
               onClick={() => {
+                loadDropdownData();
                 setSelectedEntryType('RICE_SAMPLE');
                 setSampleCollectType('broker');
                 setFormData({ entryDate: new Date().toISOString().split('T')[0], brokerName: '', variety: '', partyName: '', location: '', bags: '', lorryNumber: '', packaging: '26 kg', sampleCollectedBy: 'Broker Office Sample', sampleGivenToOffice: false, smellHas: false, smellType: '', gpsCoordinates: '' });
@@ -949,6 +1014,7 @@ const SampleEntryPage: React.FC<{
               {true && (
                 <button
                   onClick={() => {
+                    loadDropdownData();
                     setSelectedEntryType('CREATE_NEW');
                     setSampleCollectType('broker');
                     setFormData({ entryDate: new Date().toISOString().split('T')[0], brokerName: '', variety: '', partyName: '', location: '', bags: '', lorryNumber: '', packaging: '75', sampleCollectedBy: 'Broker Office Sample', sampleGivenToOffice: false, smellHas: false, smellType: '', gpsCoordinates: '' });
@@ -974,6 +1040,7 @@ const SampleEntryPage: React.FC<{
               {true && (
                 <button
                   onClick={() => {
+                    loadDropdownData();
                     setSelectedEntryType('DIRECT_LOADED_VEHICLE');
                     setSampleCollectType('broker');
                     setFormData({ entryDate: new Date().toISOString().split('T')[0], brokerName: '', variety: '', partyName: '', location: '', bags: '', lorryNumber: '', packaging: '75', sampleCollectedBy: 'Broker Office Sample', sampleGivenToOffice: false, smellHas: false, smellType: '', gpsCoordinates: '' });
@@ -999,6 +1066,7 @@ const SampleEntryPage: React.FC<{
               {(user?.role !== 'staff' || user?.staffType !== 'mill') && (
                 <button
                   onClick={() => {
+                    loadDropdownData();
                     setSelectedEntryType('LOCATION_SAMPLE');
                     setFormData({ entryDate: new Date().toISOString().split('T')[0], brokerName: '', variety: '', partyName: '', location: '', bags: '', lorryNumber: '', packaging: '75', sampleCollectedBy: user?.username || '', sampleGivenToOffice: false, smellHas: false, smellType: '', gpsCoordinates: '' });
                     setEditingEntry(null);
@@ -1421,7 +1489,8 @@ const SampleEntryPage: React.FC<{
                                 </td>
                                 <td style={{ padding: '1px 4px', textAlign: 'left', fontSize: '14px', lineHeight: '1.2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {toTitleCase(entry.variety)}
-                                  {isPaddyResampleEntry && <span style={{ marginLeft: '3px', color: '#f59e0b', fontSize: '11px' }} title='Re-sample pending'>&#8634;</span>}
+                                  {isRecheckEntry && <span style={{ marginLeft: '3px', color: '#1565c0', fontSize: '11px' }} title='Recheck pending'>&#8634;</span>}
+                                  {isPaddyResampleEntry && !isRecheckEntry && <span style={{ marginLeft: '3px', color: '#f59e0b', fontSize: '11px' }} title='Re-sample pending'>&#8634;</span>}
                                   {hasQuality && <span style={{ marginLeft: '3px', color: '#27ae60', fontSize: '11px' }} title="Quality Completed">✅</span>}
                                   {has100Grams && <span style={{ marginLeft: '3px', color: '#e65100', fontSize: '11px' }} title="100g Completed">⚡</span>}
                                 </td>
@@ -1810,12 +1879,13 @@ const SampleEntryPage: React.FC<{
                   <select
                     value={formData.brokerName}
                     onChange={(e) => setFormData({ ...formData, brokerName: e.target.value })}
+                    onFocus={() => loadDropdownData()}
                     style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '13px', backgroundColor: 'white', cursor: 'pointer' }}
                     required
                   >
                     <option value="">-- Select Broker --</option>
-                    {brokers.map((broker, index) => (
-                      <option key={index} value={broker}>{toTitleCase(broker)}</option>
+                    {brokerOptions.map((broker, index) => (
+                      <option key={index} value={toTitleCase(broker)}>{toTitleCase(broker)}</option>
                     ))}
                   </select>
                 </div>
@@ -1907,12 +1977,13 @@ const SampleEntryPage: React.FC<{
                   <select
                     value={formData.variety}
                     onChange={(e) => setFormData({ ...formData, variety: e.target.value })}
+                    onFocus={() => loadDropdownData()}
                     style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '13px', backgroundColor: 'white', cursor: 'pointer' }}
                     required
                   >
                     <option value="">-- Select Variety --</option>
-                    {varieties.map((variety, index) => (
-                      <option key={index} value={variety}>{toTitleCase(variety)}</option>
+                    {varietyOptions.map((variety, index) => (
+                      <option key={index} value={toTitleCase(variety)}>{toTitleCase(variety)}</option>
                     ))}
                   </select>
                 </div>
@@ -2903,6 +2974,7 @@ const SampleEntryPage: React.FC<{
                   <select
                     value={formData.brokerName}
                     onChange={(e) => setFormData({ ...formData, brokerName: e.target.value })}
+                    onFocus={() => loadDropdownData()}
                     disabled={bagsEditLocked}
                     style={{ 
                       width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px', 
@@ -2912,7 +2984,7 @@ const SampleEntryPage: React.FC<{
                     required
                   >
                     <option value="">-- Select Broker --</option>
-                    {brokers.map((broker, index) => (
+                    {brokerOptions.map((broker, index) => (
                       <option key={index} value={broker}>{toTitleCase(broker)}</option>
                     ))}
                   </select>
@@ -2965,6 +3037,7 @@ const SampleEntryPage: React.FC<{
                   <select
                     value={formData.variety}
                     onChange={(e) => setFormData({ ...formData, variety: e.target.value })}
+                    onFocus={() => loadDropdownData()}
                     disabled={bagsEditLocked}
                     style={{ 
                       width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px', 
@@ -2974,7 +3047,7 @@ const SampleEntryPage: React.FC<{
                     required
                   >
                     <option value="">-- Select Variety --</option>
-                    {varieties.map((variety, index) => (
+                    {varietyOptions.map((variety, index) => (
                       <option key={index} value={variety}>{toTitleCase(variety)}</option>
                     ))}
                   </select>
@@ -3392,9 +3465,10 @@ const SampleEntryPage: React.FC<{
               {/* Quality Parameters — Multi-Attempt Support — Horizontal Layout */}
               <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#e67e22', borderBottom: '2px solid #e67e22', paddingBottom: '6px', fontWeight: '800' }}>🔬 Quality Parameters</h4>
               {(() => {
-                const qpList = (detailEntry as any).qualityAttemptDetails && (detailEntry as any).qualityAttemptDetails.length > 0
+                const qpAll = (detailEntry as any).qualityAttemptDetails && (detailEntry as any).qualityAttemptDetails.length > 0
                   ? [...(detailEntry as any).qualityAttemptDetails].sort((a,b) => (a.attemptNo || 0) - (b.attemptNo || 0))
                   : (detailEntry as any).qualityParameters ? [(detailEntry as any).qualityParameters] : [];
+                const qpList = qpAll.length > 0 ? [qpAll[qpAll.length - 1]] : [];
 
                 if (qpList.length === 0) return <div style={{ color: '#999', textAlign: 'center', padding: '12px', fontSize: '12px' }}>No quality data</div>;
 
@@ -3416,7 +3490,10 @@ const SampleEntryPage: React.FC<{
                 };
                 const displayVal = (rawVal: any, numericVal: any) => {
                   const raw = rawVal != null ? String(rawVal).trim() : '';
-                  if (raw) return raw;
+                  if (raw) {
+                    const num = Number(raw);
+                    if (!Number.isFinite(num) || num !== 0) return raw;
+                  }
                   return fmt(numericVal);
                 };
                 const fmtB = (v: any, useBrackets = false) => {

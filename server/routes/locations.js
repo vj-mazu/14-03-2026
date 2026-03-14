@@ -431,20 +431,44 @@ router.put('/varieties/:id', auth, authorize('manager', 'admin'), async (req, re
     }
 
     invalidateCache('varieties');
-    await variety.update({ name, code, description });
+    const normalizedName = name ? name.trim().toUpperCase() : variety.name;
+    const normalizedCode = code ? code.trim().toUpperCase() : variety.code;
+    await variety.update({ name: normalizedName, code: normalizedCode, description });
 
-    // CASCADE UPDATE: If variety name changed, update all Arrivals with the old variety name
-    if (name && name.trim().toUpperCase() !== oldName.trim().toUpperCase()) {
+    const toTitleCase = (str) => {
+      if (!str) return str;
+      return str.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+    };
+
+    // CASCADE UPDATE: If variety name changed, update all Arrivals and SampleEntries
+    if (normalizedName !== oldName.trim().toUpperCase()) {
+      const titleCaseVariety = toTitleCase(name.trim());
       const Arrival = require('../models/Arrival');
+      const SampleEntry = require('../models/SampleEntry');
+      const { fn, col, where: sqlWhere } = require('sequelize');
+
       const updatedCount = await Arrival.update(
-        { variety: name.trim().toUpperCase() },
+        { variety: titleCaseVariety },
         {
-          where: {
-            variety: oldName.trim().toUpperCase()
-          }
+          where: sqlWhere(
+            fn('TRIM', fn('LOWER', col('variety'))),
+            oldName.trim().toLowerCase()
+          )
         }
       );
-      console.log(`✅ Cascade update: Updated ${updatedCount[0]} arrivals from variety "${oldName}" to "${name}"`);
+      console.log(`✅ Cascade update: Updated ${updatedCount[0]} arrivals from variety "${oldName}" to "${titleCaseVariety}"`);
+
+      // Cascade to SampleEntry (case-insensitive match)
+      const entryUpdated = await SampleEntry.update(
+        { variety: titleCaseVariety },
+        {
+          where: sqlWhere(
+            fn('TRIM', fn('LOWER', col('variety'))),
+            oldName.trim().toLowerCase()
+          )
+        }
+      );
+      console.log(`✅ Cascade update: Updated ${entryUpdated[0]} sample entries from variety "${oldName}" to "${titleCaseVariety}"`);
     }
 
     res.json({
@@ -839,11 +863,14 @@ router.put('/brokers/:id', auth, authorize('manager', 'admin'), async (req, res)
     const { name, description, isActive } = req.body;
     const { Op } = require('sequelize');
 
+    const normalizedName = name ? name.trim().toUpperCase() : null;
+    const oldName = broker.name;
+
     // Check for duplicate name (excluding current broker)
-    if (name && name.trim().toUpperCase() !== broker.name) {
+    if (normalizedName && normalizedName !== broker.name) {
       const existingName = await Broker.findOne({
         where: {
-          name: name.trim().toUpperCase(),
+          name: normalizedName,
           id: { [Op.ne]: req.params.id }
         }
       });
@@ -853,10 +880,34 @@ router.put('/brokers/:id', auth, authorize('manager', 'admin'), async (req, res)
     }
 
     await broker.update({
-      name: name ? name.trim().toUpperCase() : broker.name,
+      name: normalizedName || broker.name,
       description: description !== undefined ? (description ? description.trim() : null) : broker.description,
       isActive: isActive !== undefined ? isActive : broker.isActive
     });
+
+    const toTitleCase = (str) => {
+      if (!str) return str;
+      return str.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+    };
+
+    // CASCADE UPDATE: If broker name changed, update all SampleEntries
+    if (normalizedName && normalizedName !== oldName.trim().toUpperCase()) {
+      const titleCaseBroker = toTitleCase(name.trim());
+      const SampleEntry = require('../models/SampleEntry');
+      const { fn, col, where: sqlWhere } = require('sequelize');
+
+      // Cascade to SampleEntry (case-insensitive match)
+      const entryUpdated = await SampleEntry.update(
+        { brokerName: titleCaseBroker },
+        {
+          where: sqlWhere(
+            fn('TRIM', fn('LOWER', col('broker_name'))),
+            oldName.trim().toLowerCase()
+          )
+        }
+      );
+      console.log(`✅ Cascade update: Updated ${entryUpdated[0]} sample entries from broker "${oldName}" to "${titleCaseBroker}"`);
+    }
 
     res.json({
       message: 'Broker updated successfully',

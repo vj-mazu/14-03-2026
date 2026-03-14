@@ -100,6 +100,66 @@ const normalizeGramsReport = (value, fallback = '10gms') => {
   return value === '5gms' ? '5gms' : '10gms';
 };
 // ------------------------------------------
+const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt) => {
+  try {
+    const latestRecheckLog = await SampleEntryAuditLog.findOne({
+      where: {
+        tableName: 'sample_entries',
+        actionType: 'WORKFLOW_TRANSITION',
+        recordId: sampleEntryId
+      },
+      order: [['createdAt', 'DESC']],
+      raw: true
+    });
+
+    if (!latestRecheckLog?.metadata?.recheckRequested) {
+      return {
+        recheckRequested: false,
+        recheckType: null,
+        recheckAt: null,
+        qualityPending: false,
+        cookingPending: false
+      };
+    }
+
+    const recheckType = latestRecheckLog.metadata.recheckType || null;
+    const recheckAt = latestRecheckLog.createdAt || null;
+    const recheckTime = recheckAt ? new Date(recheckAt).getTime() : null;
+    const qualityTime = qualityUpdatedAt ? new Date(qualityUpdatedAt).getTime() : null;
+    const cookingTime = cookingUpdatedAt ? new Date(cookingUpdatedAt).getTime() : null;
+
+    const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime);
+    const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime);
+
+    let recheckRequested = true;
+    if (recheckType === 'quality') {
+      recheckRequested = !qualityDone;
+    } else if (recheckType === 'cooking') {
+      recheckRequested = !cookingDone;
+    } else if (recheckType === 'both') {
+      recheckRequested = !(qualityDone && cookingDone);
+    } else {
+      recheckRequested = false;
+    }
+
+    return {
+      recheckRequested,
+      recheckType,
+      recheckAt,
+      qualityPending: (recheckType === 'quality' || recheckType === 'both') ? !qualityDone : false,
+      cookingPending: (recheckType === 'cooking' || recheckType === 'both') ? !cookingDone : false
+    };
+  } catch (error) {
+    console.error('Non-critical error fetching recheck status:', error);
+    return {
+      recheckRequested: false,
+      recheckType: null,
+      recheckAt: null,
+      qualityPending: false,
+      cookingPending: false
+    };
+  }
+};
 
 // ─── Paddy Supervisors list (for Sample Collected By dropdown) ───
 router.get('/paddy-supervisors', authenticateToken, async (req, res) => {
@@ -741,7 +801,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Sample entry not found' });
     }
 
-    res.json(entry);
+    const result = entry.toJSON ? entry.toJSON() : { ...entry };
+    const qualityUpdatedAt = entry?.qualityParameters?.updatedAt || entry?.qualityParameters?.createdAt || null;
+    const cookingUpdatedAt = entry?.cookingReport?.updatedAt || entry?.cookingReport?.createdAt || null;
+    const recheckState = await getRecheckState(req.params.id, qualityUpdatedAt, cookingUpdatedAt);
+    result.recheckRequested = recheckState.recheckRequested;
+    result.recheckType = recheckState.recheckType;
+    result.recheckAt = recheckState.recheckAt;
+
+    res.json(result);
   } catch (error) {
     console.error('Error getting sample entry:', error);
     res.status(500).json({ error: error.message });
@@ -985,9 +1053,15 @@ router.post('/:id/quality-parameters', authenticateToken, async (req, res) => {
         const existingQuality = await QualityParametersService.getQualityParametersBySampleEntry(req.params.id);
         if (existingQuality) {
           const sampleEntry = await SampleEntry.findByPk(req.params.id);
+          const recheckState = await getRecheckState(
+            req.params.id,
+            existingQuality?.updatedAt || existingQuality?.createdAt || null,
+            null
+          );
+          const isRecheckQualityPending = recheckState.qualityPending === true;
 
           // Staff one-time edit check: if already used their one chance, block
-          if (req.user.role === 'staff' && sampleEntry?.staffBagsEdits >= 1) {
+          if (req.user.role === 'staff' && sampleEntry?.staffBagsEdits >= 1 && !isRecheckQualityPending) {
             return res.status(403).json({ error: 'Quality parameters can only be edited once by staff.' });
           }
 
@@ -1005,7 +1079,7 @@ router.post('/:id/quality-parameters', authenticateToken, async (req, res) => {
             Number(existingQuality.bend2 || 0) === Number(qualityData.bend2 || 0) &&
             Number(existingQuality.grainsCount || 0) === Number(qualityData.grainsCount || 0);
 
-          if (same) {
+          if (same && !isRecheckQualityPending) {
             return res.json(existingQuality);
           }
 
@@ -1090,11 +1164,6 @@ router.put('/:id/quality-parameters', authenticateToken, async (req, res) => {
           return res.status(404).json({ error: 'Sample entry not found' });
         }
 
-        // Admin/Manager edit only. Staff can edit quality ONLY once (checking staffBagsEdits).
-        if (req.user.role === 'staff' && sampleEntry.staffBagsEdits >= 1) {
-          return res.status(403).json({ error: 'Quality parameters can only be edited once by staff. Please contact admin/manager for further changes.' });
-        }
-
         // Location staff can edit own LOCATION_SAMPLE entries OR assigned resample lots.
         if (userRole === 'physical_supervisor' && sampleEntry.entryType === 'LOCATION_SAMPLE') {
           const canEdit = await canLocationStaffEditQuality(sampleEntry, req.user);
@@ -1110,6 +1179,18 @@ router.put('/:id/quality-parameters', authenticateToken, async (req, res) => {
         const existing = await QualityParametersService.getQualityParametersBySampleEntry(sampleEntryId);
         if (!existing) {
           return res.status(404).json({ error: 'Quality parameters not found for this entry' });
+        }
+
+        const recheckState = await getRecheckState(
+          sampleEntryId,
+          existing?.updatedAt || existing?.createdAt || null,
+          null
+        );
+        const isRecheckQualityPending = recheckState.qualityPending === true;
+
+        // Admin/Manager edit only. Staff can edit quality ONLY once (checking staffBagsEdits).
+        if (req.user.role === 'staff' && sampleEntry.staffBagsEdits >= 1 && !isRecheckQualityPending) {
+          return res.status(403).json({ error: 'Quality parameters can only be edited once by staff. Please contact admin/manager for further changes.' });
         }
 
         const reportedByValue = typeof req.body.reportedBy === 'string' ? req.body.reportedBy.trim() : '';
@@ -1187,8 +1268,8 @@ router.put('/:id/quality-parameters', authenticateToken, async (req, res) => {
           getWorkflowRole(req.user)
         );
 
-        // Increment edit counter for staff to prevent further changes
-        if (req.user.role === 'staff') {
+        // Increment edit counter for staff to prevent further changes (skip during recheck)
+        if (req.user.role === 'staff' && !isRecheckQualityPending) {
           await sampleEntry.update({ staffBagsEdits: (sampleEntry.staffBagsEdits || 0) + 1 });
         }
 

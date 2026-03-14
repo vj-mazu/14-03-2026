@@ -122,6 +122,32 @@ class QualityParametersService {
                 userRole,
                 { qualityParametersId: id }
               );
+            } else if (sampleEntry.workflowStatus === 'QUALITY_CHECK') {
+              // If this was a BOTH recheck, move to cooking after quality update
+              try {
+                const SampleEntryAuditLog = require('../models/SampleEntryAuditLog');
+                const latestTransition = await SampleEntryAuditLog.findOne({
+                  where: {
+                    tableName: 'sample_entries',
+                    actionType: 'WORKFLOW_TRANSITION',
+                    recordId: updates.sampleEntryId
+                  },
+                  order: [['createdAt', 'DESC']],
+                  raw: true
+                });
+                if (latestTransition?.metadata?.recheckRequested === true
+                  && latestTransition.metadata.recheckType === 'both') {
+                  await WorkflowEngine.transitionTo(
+                    updates.sampleEntryId,
+                    'COOKING_REPORT',
+                    userId,
+                    userRole,
+                    { recheckType: 'both', qualityParametersId: id, autoTransitionFromBoth: true }
+                  );
+                }
+              } catch (auditErr) {
+                console.log(`[QUALITY] Skipping auto-transition: ${auditErr.message}`);
+              }
             }
           }
         } catch (wfErr) {

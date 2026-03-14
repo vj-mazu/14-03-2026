@@ -349,6 +349,14 @@ const EditModal: React.FC<EditModalProps> = ({ user, mode, onClose, onSave }) =>
                 }
 
                 await axios.put(`/admin/users/${user?.id}/credentials`, updates);
+
+                // If role was changed, also update role separately
+                if (role !== user?.role) {
+                    await axios.put(`/admin/users/${user?.id}/role`, {
+                        role,
+                        ...(role === 'staff' ? { staffType } : {})
+                    });
+                }
                 toast.success('User updated successfully');
             }
 

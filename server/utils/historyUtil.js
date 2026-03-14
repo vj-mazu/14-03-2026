@@ -122,9 +122,32 @@ const attachLoadingLotsHistories = async (rows) => {
     );
     if (recheckLogs.length > 0) {
       const latestRecheck = recheckLogs[recheckLogs.length - 1];
-      target.recheckRequested = true;
-      target.recheckType = latestRecheck.metadata?.recheckType || null;
-      target.recheckAt = latestRecheck.createdAt || null;
+      const recheckType = latestRecheck.metadata?.recheckType || null;
+      const recheckAt = latestRecheck.createdAt || null;
+      const recheckTime = recheckAt ? new Date(recheckAt).getTime() : null;
+
+      const qualityUpdatedAt = row?.qualityParameters?.updatedAt || row?.qualityParameters?.createdAt || null;
+      const cookingUpdatedAt = row?.cookingReport?.updatedAt || row?.cookingReport?.createdAt || null;
+      const qualityTime = qualityUpdatedAt ? new Date(qualityUpdatedAt).getTime() : null;
+      const cookingTime = cookingUpdatedAt ? new Date(cookingUpdatedAt).getTime() : null;
+
+      const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime);
+      const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime);
+
+      let isPending = true;
+      if (recheckType === 'quality') {
+        isPending = !qualityDone;
+      } else if (recheckType === 'cooking') {
+        isPending = !cookingDone;
+      } else if (recheckType === 'both') {
+        isPending = !(qualityDone && cookingDone);
+      } else {
+        isPending = false;
+      }
+
+      target.recheckRequested = isPending;
+      target.recheckType = isPending ? recheckType : null;
+      target.recheckAt = isPending ? recheckAt : null;
     } else {
       target.recheckRequested = false;
       target.recheckType = null;
@@ -192,32 +215,29 @@ const attachLoadingLotsHistories = async (rows) => {
     
     if (transitionLogs.length > 0) {
       // Each transition marks the start of a new attempt.
-      // Attempt 1: From start of entry until transition 2
-      // Attempt 2: From transition 2 until transition 3...
-      
-      // Group quality logs by transition interval
-      // Note: First attempt might have quality logs BEFORE the first transition (CREATE action).
-      // We group them based on which transition they fall into.
-      
-      const attempts = [];
-      for (let i = 0; i < transitionLogs.length; i++) {
-        attempts.push([]);
-      }
-      
-      auditLogs.forEach((qLog) => {
-        const qTime = new Date(qLog.createdAt).getTime();
-        
-        // Find the attempt this log belongs to.
-        // It belongs to Attempt N if qTime >= Transition N time AND qTime < Transition N+1 time.
-        // Exception: if qTime < Transition 1, it still belongs to Attempt 1.
-        let targetAttemptIdx = 0;
+      // If quality logs exist BEFORE the first transition, treat that as Attempt 1,
+      // and shift transitions to define Attempt 2, 3, ...
+
+      const firstTransitionTime = new Date(transitionLogs[0].createdAt).getTime();
+      const hasPreTransitionLogs = auditLogs.some((qLog) => new Date(qLog.createdAt).getTime() < firstTransitionTime);
+      const attemptCount = transitionLogs.length + (hasPreTransitionLogs ? 1 : 0);
+      const attempts = Array.from({ length: attemptCount }, () => []);
+
+      const getAttemptIndexForTime = (timeMs) => {
+        if (hasPreTransitionLogs && timeMs < firstTransitionTime) return 0;
+        const offset = hasPreTransitionLogs ? 1 : 0;
         for (let j = transitionLogs.length - 1; j >= 0; j--) {
           const tTime = new Date(transitionLogs[j].createdAt).getTime();
-          if (qTime >= tTime) {
-            targetAttemptIdx = j;
-            break;
+          if (timeMs >= tTime) {
+            return j + offset;
           }
         }
+        return 0;
+      };
+
+      auditLogs.forEach((qLog) => {
+        const qTime = new Date(qLog.createdAt).getTime();
+        const targetAttemptIdx = getAttemptIndexForTime(qTime);
         attempts[targetAttemptIdx].push(qLog);
       });
       
@@ -241,25 +261,21 @@ const attachLoadingLotsHistories = async (rows) => {
         }
       });
       
-      // Always include current state as the latest attempt if it's newer than the last log
+      // Always include current state as the latest attempt
       const currentDetail = buildQualityAttemptDetail(row.qualityParameters, row.qualityParameters?.updatedAt || row.qualityParameters?.createdAt);
       if (currentDetail) {
-        // Find if current state belongs to the last attempt or a new one
-        const lastTransition = transitionLogs[transitionLogs.length - 1];
-        const lastTransitionTime = new Date(lastTransition.createdAt).getTime();
         const currentTime = new Date(row.qualityParameters.updatedAt || row.qualityParameters.createdAt).getTime();
-        
-        // If currentTime is after the last transition, it belongs to the last attempt
-        // (Since transitionLogs already accounts for all rechecks)
-        if (qualityAttemptDetails.length === transitionLogs.length) {
-            // Update last attempt with current data to ensure most recent edits are shown
-            const lastIdx = qualityAttemptDetails.length - 1;
-            qualityAttemptDetails[lastIdx] = { attemptNo: qualityAttemptDetails[lastIdx].attemptNo, ...currentDetail };
-        } else if (currentTime >= lastTransitionTime) {
-            // This shouldn't happen often if audit logs are complete, but safe backup
-            qualityAttemptDetails.push({ attemptNo: transitionLogs.length, ...currentDetail });
+        const currentAttemptIdx = getAttemptIndexForTime(currentTime);
+        const attemptNo = currentAttemptIdx + 1;
+        const existingIdx = qualityAttemptDetails.findIndex((item) => item.attemptNo === attemptNo);
+        if (existingIdx >= 0) {
+          qualityAttemptDetails[existingIdx] = { attemptNo, ...currentDetail };
+        } else {
+          qualityAttemptDetails.push({ attemptNo, ...currentDetail });
         }
       }
+
+      qualityAttemptDetails.sort((a, b) => (a.attemptNo || 0) - (b.attemptNo || 0));
     } else {
       // Fallback if no transition logs (should not happen in normal workflow)
       const fallbackDetail = buildQualityAttemptDetail(row.qualityParameters, row.createdAt);

@@ -207,6 +207,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
 
     // Detail popup
     const [detailEntry, setDetailEntry] = useState<SampleEntry | null>(null);
+    const [detailMode, setDetailMode] = useState<'summary' | 'history'>('summary');
     const [pricingDetail, setPricingDetail] = useState<PricingDetailState | null>(null);
     const [remarksPopup, setRemarksPopup] = useState<{ isOpen: boolean; text: string }>({ isOpen: false, text: '' });
     const [recheckModal, setRecheckModal] = useState<{ isOpen: boolean; entry: SampleEntry | null }>({ isOpen: false, entry: null });
@@ -501,7 +502,8 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const resampleAttempts = Math.max(0, Number(entry.qualityReportAttempts || 0));
         const cookingStatusKey = String(cr?.status || '').toUpperCase();
         const isCookingPassed = cookingStatusKey === 'PASS' || cookingStatusKey === 'MEDIUM';
-        const isResampleInProgress = d === 'FAIL' && s !== 'FAILED' && !isCookingPassed && !entry.offering?.finalPrice;
+        const isRecheckRequested = (entry as any).recheckRequested === true;
+        const isResampleInProgress = d === 'FAIL' && s !== 'FAILED' && !isCookingPassed && !entry.offering?.finalPrice && !isRecheckRequested;
         const showResampleRound = resampleAttempts > 1 && isResampleInProgress;
         const userStr = localStorage.getItem('user');
         let userRole = '';
@@ -518,6 +520,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         let color = '#e65100';
         // Resample in-progress only while current resample cycle is not yet passed/finalized
         if (d === 'SOLDOUT') { bg = '#800000'; color = '#ffffff'; label = 'Sold Out'; }
+        else if (isRecheckRequested) { bg = '#e3f2fd'; color = '#1565c0'; label = 'Rechecking'; }
         else if (d === 'FAIL') { bg = '#ffcdd2'; color = '#b71c1c'; label = 'Fail'; }
         else if (s === 'FAILED') { bg = '#ffcdd2'; color = '#b71c1c'; label = 'Fail'; }
         else if (isResampleInProgress) { bg = '#fff3e0'; color = '#e65100'; label = 'Re-sample Pending'; }
@@ -559,7 +562,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '10px', backgroundColor: bg, color, fontWeight: '600', whiteSpace: 'nowrap' as const }}>{label}</span>
                 <div style={{ display: 'flex', gap: '3px' }}>
                     <button 
-                        onClick={(e) => { e.stopPropagation(); setDetailEntry(entry); }}
+                        onClick={(e) => { e.stopPropagation(); setDetailMode('history'); setDetailEntry(entry); }}
                         style={{ fontSize: '8px', padding: '1px 4px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer', fontWeight: '600' }}
                     >
                         View
@@ -585,39 +588,104 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
     };
 
     const qualityBadge = (entry: SampleEntry) => {
-        const qp = entry.qualityParameters;
+        const attemptDetails = (entry as any).qualityAttemptDetails || [];
+        const attemptsSorted = attemptDetails.length > 0
+            ? [...attemptDetails].sort((a: any, b: any) => (a.attemptNo || 0) - (b.attemptNo || 0))
+            : (entry.qualityParameters ? [entry.qualityParameters] : []);
+        const attemptsCount = attemptsSorted.length > 0 ? attemptsSorted.length : Math.max(0, Number(entry.qualityReportAttempts || 0));
+        const latestAttempt = attemptsSorted.length > 0 ? attemptsSorted[attemptsSorted.length - 1] : null;
         const d = entry.lotSelectionDecision;
-        if (qp && qp.moisture != null) {
-            const hasFullQuality = (qp.cutting1 && Number(qp.cutting1) !== 0)
-                || (qp.bend1 && Number(qp.bend1) !== 0)
-                || hasAlphaOrPositiveValue(qp.mix)
-                || hasAlphaOrPositiveValue(qp.mixS)
-                || hasAlphaOrPositiveValue(qp.mixL);
-            const has100g = qp.grainsCount != null && Number(qp.grainsCount) !== 0;
+        const isRecheckRequested = (entry as any).recheckRequested === true;
 
-            // Determine Pass/Fail badge based on lot selection decision
-            const isFail = d === 'FAIL';
-            const isPass = d === 'PASS_WITH_COOKING' || d === 'PASS_WITHOUT_COOKING' || d === 'SOLDOUT' || Number(entry.qualityReportAttempts || 0) > 1;
+        const getQualityType = (attempt: any) => {
+            if (!attempt) return 'Pending';
+            const hasFullQuality = (attempt.cutting1 && Number(attempt.cutting1) !== 0)
+                || (attempt.bend1 && Number(attempt.bend1) !== 0)
+                || hasAlphaOrPositiveValue(attempt.mix)
+                || hasAlphaOrPositiveValue(attempt.mixS)
+                || hasAlphaOrPositiveValue(attempt.mixL);
+            const has100g = attempt.grainsCount != null && Number(attempt.grainsCount) !== 0;
+            if (hasFullQuality) return 'Done';
+            if (has100g) return '100-Gms';
+            return 'Pending';
+        };
 
-            if (hasFullQuality) {
-                if (isFail) {
-                    return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}><span style={{ background: '#c8e6c9', color: '#2e7d32', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>✓ Done</span><span style={{ background: '#ffcdd2', color: '#b71c1c', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Fail</span></div>;
-                }
-                if (isPass) {
-                    return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}><span style={{ background: '#c8e6c9', color: '#2e7d32', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>✓ Done</span><span style={{ background: '#a5d6a7', color: '#1b5e20', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Pass</span></div>;
-                }
-                return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}><span style={{ background: '#c8e6c9', color: '#2e7d32', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>✓ Done</span></div>;
-            }
-            if (has100g) {
-                if (isFail) {
-                    return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}><span style={{ background: '#fff8e1', color: '#f57f17', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>100-Gms</span><span style={{ background: '#ffcdd2', color: '#b71c1c', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Fail</span></div>;
-                }
-                if (isPass) {
-                    return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}><span style={{ background: '#fff8e1', color: '#f57f17', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>100-Gms</span><span style={{ background: '#a5d6a7', color: '#1b5e20', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Pass</span></div>;
-                }
-                return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}><span style={{ background: '#fff8e1', color: '#f57f17', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '600' }}>100-Gms</span></div>;
-            }
+        const getLatestStatus = (attempt: any) => {
+            if (!attempt) return 'Pending';
+            const hasFullQuality = (attempt.cutting1 && Number(attempt.cutting1) !== 0)
+                || (attempt.bend1 && Number(attempt.bend1) !== 0)
+                || hasAlphaOrPositiveValue(attempt.mix)
+                || hasAlphaOrPositiveValue(attempt.mixS)
+                || hasAlphaOrPositiveValue(attempt.mixL);
+            const has100g = attempt.grainsCount != null && Number(attempt.grainsCount) !== 0;
+            const isPass = d === 'PASS_WITH_COOKING'
+                || d === 'PASS_WITHOUT_COOKING'
+                || d === 'SOLDOUT'
+                || (attemptsCount > 1 && (hasFullQuality || has100g));
+            if (isPass) return 'Pass';
+            if (isRecheckRequested) return 'Rechecking';
+            if (d === 'FAIL') return 'Fail';
+            return 'Pending';
+        };
+
+        if (attemptsCount > 1 && attemptsSorted.length > 0) {
+            const lastStatus = getLatestStatus(latestAttempt);
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    {attemptsSorted.map((attempt: any, idx: number) => {
+                        const attemptNo = idx + 1;
+                        const label = attemptNo === 1 ? '1st' : attemptNo === 2 ? '2nd' : attemptNo === 3 ? '3rd' : `${attemptNo}th`;
+                        const isLast = idx === attemptsSorted.length - 1;
+                        const qualityType = getQualityType(attempt);
+                        const statusLabel = isLast ? lastStatus : 'Fail';
+                        const typeStyle = qualityType === 'Done'
+                            ? { bg: '#c8e6c9', color: '#2e7d32' }
+                            : qualityType === '100-Gms'
+                                ? { bg: '#fff8e1', color: '#f57f17' }
+                                : { bg: '#f5f5f5', color: '#666' };
+                        const statusStyle = statusLabel === 'Pass'
+                            ? { bg: '#a5d6a7', color: '#1b5e20' }
+                            : statusLabel === 'Rechecking'
+                                ? { bg: '#e3f2fd', color: '#1565c0' }
+                                : statusLabel === 'Fail'
+                                    ? { bg: '#ffcdd2', color: '#b71c1c' }
+                                    : { bg: '#ffe0b2', color: '#e65100' };
+                        return (
+                            <div key={`${entry.id}-attempt-${attemptNo}`} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: '#555', minWidth: '34px' }}>{label}:</span>
+                                <span style={{ background: typeStyle.bg, color: typeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{qualityType}</span>
+                                <span style={{ background: statusStyle.bg, color: statusStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{statusLabel}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
         }
+
+        if (attemptsSorted.length > 0) {
+            const attempt = attemptsSorted[attemptsSorted.length - 1];
+            const qualityType = getQualityType(attempt);
+            const statusLabel = getLatestStatus(attempt);
+            const typeStyle = qualityType === 'Done'
+                ? { bg: '#c8e6c9', color: '#2e7d32' }
+                : qualityType === '100-Gms'
+                    ? { bg: '#fff8e1', color: '#f57f17' }
+                    : { bg: '#f5f5f5', color: '#666' };
+            const statusStyle = statusLabel === 'Pass'
+                ? { bg: '#a5d6a7', color: '#1b5e20' }
+                : statusLabel === 'Rechecking'
+                    ? { bg: '#e3f2fd', color: '#1565c0' }
+                    : statusLabel === 'Fail'
+                        ? { bg: '#ffcdd2', color: '#b71c1c' }
+                        : { bg: '#ffe0b2', color: '#e65100' };
+            return (
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <span style={{ background: typeStyle.bg, color: typeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{qualityType}</span>
+                    <span style={{ background: statusStyle.bg, color: statusStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{statusLabel}</span>
+                </div>
+            );
+        }
+
         return <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}><span style={{ background: '#f5f5f5', color: '#c62828', padding: '2px 6px', borderRadius: '10px', fontSize: '9px' }}>Pending</span></div>;
     };
 
@@ -818,7 +886,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', fontWeight: '700', textAlign: 'center', whiteSpace: 'nowrap' }}>{entry.bags || '0'}</td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'center', whiteSpace: 'nowrap' }}>{Number(entry.packaging) === 0 ? 'Loose' : `${entry.packaging || '75'} kg`}</td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '14px', cursor: 'pointer', color: '#1565c0', fontWeight: '600', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                                    onClick={() => setDetailEntry(entry)}>
+                                                                    onClick={() => { setDetailMode('summary'); setDetailEntry(entry); }}>
                                                                     {getPartyLabel(entry)}
                                                                 </td>
                                                                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'left', whiteSpace: 'nowrap' }}>
@@ -936,7 +1004,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 detailEntry && (
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}
                         onClick={() => setDetailEntry(null)}>
-                        <div style={{ backgroundColor: 'white', borderRadius: '8px', width: '500px', maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto', overflowX: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+                        <div style={{ backgroundColor: 'white', borderRadius: '8px', width: detailMode === 'history' ? '85vw' : '500px', maxWidth: detailMode === 'history' ? '88vw' : '90vw', maxHeight: detailMode === 'history' ? '82vh' : '80vh', overflowY: 'auto', overflowX: detailMode === 'history' ? 'auto' : 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
                             onClick={e => e.stopPropagation()}>
                             {/* Redesigned Header — Green Background, Aligned Items */}
                             <div style={{
@@ -972,7 +1040,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                     boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                                 }}>✕</button>
                             </div>
-                            <div style={{ padding: '24px', backgroundColor: '#fff', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px' }}>
+                            <div style={{ padding: '24px', backgroundColor: '#fff', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px', minWidth: detailMode === 'history' ? '1200px' : 'auto' }}>
                                 {/* Basic Info Grid */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
                                     {[
@@ -1005,9 +1073,12 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                 {/* Quality Parameters — hide 0 values */}
                                 <h4 style={{ margin: '0 0 10px', fontSize: '13px', color: '#e67e22', borderBottom: '2px solid #e67e22', paddingBottom: '6px' }}>🔬 Quality Parameters</h4>
                                 {(() => {
-                                    const qpList = (detailEntry as any).qualityAttemptDetails && (detailEntry as any).qualityAttemptDetails.length > 0
+                                    const qpAll = (detailEntry as any).qualityAttemptDetails && (detailEntry as any).qualityAttemptDetails.length > 0
                                         ? [...(detailEntry as any).qualityAttemptDetails].sort((a,b) => (a.attemptNo || 0) - (b.attemptNo || 0))
                                         : (detailEntry as any).qualityParameters ? [(detailEntry as any).qualityParameters] : [];
+                                    const qpList = detailMode === 'history'
+                                        ? qpAll
+                                        : (qpAll.length > 0 ? [qpAll[qpAll.length - 1]] : []);
 
                                     if (qpList.length === 0) return <div style={{ color: '#999', textAlign: 'center', padding: '12px', fontSize: '12px' }}>No quality data</div>;
 
@@ -1030,7 +1101,10 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                     };
                                     const displayVal = (rawVal: any, numericVal: any) => {
                                         const raw = rawVal != null ? String(rawVal).trim() : '';
-                                        if (raw) return raw;
+                                        if (raw) {
+                                            const num = Number(raw);
+                                            if (!Number.isFinite(num) || num !== 0) return raw;
+                                        }
                                         return fmt(numericVal);
                                     };
                                     const fmtB = (v: any, useBrackets = false) => {
@@ -1048,6 +1122,108 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                         );
                                     };
                                     const qualityPhotoUrl = qpList.find((qp: any) => qp?.uploadFileUrl)?.uploadFileUrl;
+                                    const hasHistory = detailMode === 'history' && qpList.length > 1;
+                                    const getAttemptLabel = (attemptNo: number, idx: number) => {
+                                        const num = attemptNo || idx + 1;
+                                        if (num === 1) return '1st Sample';
+                                        if (num === 2) return '2nd Sample';
+                                        if (num === 3) return '3rd Sample';
+                                        return `${num}th Sample`;
+                                    };
+
+                                    if (hasHistory) {
+                                        const columns = [
+                                            { key: 'reportedBy', label: 'Sample Reported By' },
+                                            { key: 'moisture', label: 'Moisture' },
+                                            { key: 'cutting', label: 'Cutting' },
+                                            { key: 'bend', label: 'Bend' },
+                                            { key: 'grainsCount', label: 'Grains Count' },
+                                            { key: 'mix', label: 'Mix' },
+                                            { key: 'mixS', label: 'S Mix' },
+                                            { key: 'mixL', label: 'L Mix' },
+                                            { key: 'kandu', label: 'Kandu' },
+                                            { key: 'oil', label: 'Oil' },
+                                            { key: 'sk', label: 'SK' },
+                                            { key: 'wbR', label: 'WB-R' },
+                                            { key: 'wbBk', label: 'WB-BK' },
+                                            { key: 'wbT', label: 'WB-T' },
+                                            { key: 'paddyWb', label: 'Paddy WB' }
+                                        ];
+
+                                        const getCellValue = (qp: any, key: string) => {
+                                            if (key === 'reportedBy') return toTitleCase(qp.reportedBy || '-');
+                                            if (key === 'moisture') {
+                                                const val = displayVal(qp.moistureRaw, qp.moisture);
+                                                return val ? `${val}%` : '-';
+                                            }
+                                            if (key === 'cutting') {
+                                                const cut1 = displayVal(qp.cutting1Raw, qp.cutting1);
+                                                const cut2 = displayVal(qp.cutting2Raw, qp.cutting2);
+                                                return cut1 && cut2 ? `${cut1}x${cut2}` : '-';
+                                            }
+                                            if (key === 'bend') {
+                                                const bend1 = displayVal(qp.bend1Raw, qp.bend1);
+                                                const bend2 = displayVal(qp.bend2Raw, qp.bend2);
+                                                return bend1 && bend2 ? `${bend1}x${bend2}` : '-';
+                                            }
+                                            if (key === 'grainsCount') {
+                                                const val = displayVal(qp.grainsCountRaw, qp.grainsCount);
+                                                return val ? `(${val})` : '-';
+                                            }
+                                            if (key === 'mix') return displayVal(qp.mixRaw, qp.mix) || '-';
+                                            if (key === 'mixS') return displayVal(qp.mixSRaw, qp.mixS) || '-';
+                                            if (key === 'mixL') return displayVal(qp.mixLRaw, qp.mixL) || '-';
+                                            if (key === 'kandu') return displayVal(qp.kanduRaw, qp.kandu) || '-';
+                                            if (key === 'oil') return displayVal(qp.oilRaw, qp.oil) || '-';
+                                            if (key === 'sk') return displayVal(qp.skRaw, qp.sk) || '-';
+                                            if (key === 'wbR') return displayVal(qp.wbRRaw, qp.wbR) || '-';
+                                            if (key === 'wbBk') return displayVal(qp.wbBkRaw, qp.wbBk) || '-';
+                                            if (key === 'wbT') return displayVal(qp.wbTRaw, qp.wbT) || '-';
+                                            if (key === 'paddyWb') return displayVal(qp.paddyWbRaw, qp.paddyWb) || '-';
+                                            return '-';
+                                        };
+
+                                        return (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                {qualityPhotoUrl && (
+                                                    <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '10px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '800', color: '#1d4ed8', marginBottom: '8px', textTransform: 'uppercase' }}>Quality Photo</div>
+                                                        <img
+                                                            src={`${API_URL.replace('/api', '')}${qualityPhotoUrl}`}
+                                                            alt="Quality"
+                                                            style={{ width: '100%', height: '200px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e0e0e0' }}
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div style={{ overflowX: 'auto' }}>
+                                                    <table style={{ width: '100%', minWidth: '1600px', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                        <thead>
+                                                            <tr>
+                                                                <th style={{ border: '1px solid #e0e0e0', padding: '6px', background: '#f7f7f7', textAlign: 'left', whiteSpace: 'nowrap' }}>Sample</th>
+                                                                {columns.map(col => (
+                                                                    <th key={col.key} style={{ border: '1px solid #e0e0e0', padding: '6px', background: '#f7f7f7', textAlign: 'center', whiteSpace: 'nowrap' }}>{col.label}</th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {qpList.map((qp: any, idx: number) => (
+                                                                <tr key={`${qp.attemptNo || idx}-row`}>
+                                                                    <td style={{ border: '1px solid #e0e0e0', padding: '6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                                        {getAttemptLabel(qp.attemptNo, idx)}
+                                                                    </td>
+                                                                    {columns.map(col => (
+                                                                        <td key={`${qp.attemptNo || idx}-${col.key}`} style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                                            {getCellValue(qp, col.key)}
+                                                                        </td>
+                                                                    ))}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
 
                                     return (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1078,10 +1254,10 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                 }
                                                 const cut1 = displayVal((qp as any).cutting1Raw, qp.cutting1);
                                                 const cut2 = displayVal((qp as any).cutting2Raw, qp.cutting2);
-                                                if (cut1 && cut2) row1.push({ label: 'Cutting', value: `${cut1}×${cut2}` });
+                                                if (cut1 && cut2) row1.push({ label: 'Cutting', value: `${cut1}x${cut2}` });
                                                 const bend1 = displayVal((qp as any).bend1Raw, qp.bend1);
                                                 const bend2 = displayVal((qp as any).bend2Raw, qp.bend2);
-                                                if (bend1 && bend2) row1.push({ label: 'Bend', value: `${bend1}×${bend2}` });
+                                                if (bend1 && bend2) row1.push({ label: 'Bend', value: `${bend1}x${bend2}` });
                                                 const grainsVal = displayVal((qp as any).grainsCountRaw, qp.grainsCount);
                                                 if (grainsVal) row1.push({ label: 'Grains Count', value: `(${grainsVal})` });
                                                 
@@ -1500,3 +1676,4 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
 };
 
 export default AdminSampleBook2;
+

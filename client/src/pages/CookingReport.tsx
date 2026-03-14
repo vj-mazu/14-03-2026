@@ -394,44 +394,73 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
       'Sample Reported': { color: '#607d8b', bg: '#eceff1', label: '📝 Sample Reported' }
     };
     if (history.length > 0) {
+      const formatEventDate = (value?: string | null) => value
+        ? new Date(value).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+        : '-';
+
       const histContent = (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
-          {history.map((h: any, i: number) => {
-            const isStatusAction = !!h.status;
-            let actionBy = isStatusAction ? (h.approvedBy || 'Unknown') : (h.cookingDoneBy || 'Unknown');
+        <div style={{ maxHeight: '420px', overflowY: 'auto', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '700px' }}>
+            <thead>
+              <tr style={{ background: '#f5f5f5' }}>
+                <th style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center', width: '6%' }}>No</th>
+                <th style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center', width: '16%' }}>Status</th>
+                <th style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'left', width: '26%' }}>Done By</th>
+                <th style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'left', width: '26%' }}>Approved By</th>
+                <th style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center', width: '10%' }}>Rem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h: any, i: number) => {
+                const isStatusAction = !!h.status;
+                const isSampleReported = !!h.isSampleReportEvent;
+                const statusKey = isSampleReported ? 'Sample Reported' : (h.status || 'COOKING');
+                const statusInfo = statusMap[statusKey] || (isStatusAction ? statusMap[h.status] : null);
+                const doneByName = isSampleReported
+                  ? (h.reportedBy || '-')
+                  : (!isStatusAction && h.cookingDoneBy ? h.cookingDoneBy : '');
+                const approvedByName = isStatusAction ? (h.approvedBy || '') : '';
+                const doneByDate = doneByName ? formatEventDate(h.date) : '-';
+                const approvedByDate = approvedByName ? formatEventDate(h.date) : '-';
 
-            if (h.isSampleReportEvent) {
-              actionBy = h.reportedBy;
-            }
-
-            const sc = isStatusAction && h.status ? (statusMap[h.status] || { color: '#ffffff', bg: '#607d8b', label: h.status }) : null;
-
-            return (
-              <div key={i} style={{ padding: '10px', border: '1px solid #eee', borderRadius: '6px', backgroundColor: isStatusAction ? '#f8f9fa' : '#ffffff' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontWeight: '600', color: isStatusAction ? '#1565c0' : '#6a1b9a', fontSize: '13px' }}>
-                      {i + 1}. {actionBy}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                      {h.date ? new Date(h.date).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '-'}
-                    </div>
-                  </div>
-                  {isStatusAction && sc && (
-                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', backgroundColor: sc.bg, color: sc.color }}>
-                      {h.status}
-                    </span>
-                  )}
-                </div>
-                {h.remarks && (
-                  <div style={{ marginTop: '8px', padding: '6px 8px', backgroundColor: '#fff3e0', borderLeft: '3px solid #ff9800', fontSize: '12px', color: '#333' }}>
-                    <span style={{ fontWeight: '600', color: '#e65100', fontSize: '11px', display: 'block', marginBottom: '2px' }}>Remark:</span>
-                    {h.remarks}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                return (
+                  <tr key={i}>
+                    <td style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center', fontWeight: '700' }}>{i + 1}</td>
+                    <td style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center' }}>
+                      {statusInfo ? (
+                        <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', backgroundColor: statusInfo.bg, color: statusInfo.color }}>
+                          {statusKey}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#f0f0f0', color: '#555' }}>
+                          {statusKey}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ border: '1px solid #e0e0e0', padding: '6px' }}>
+                      <div style={{ fontWeight: '700', color: '#6a1b9a' }}>{doneByName || '-'}</div>
+                      <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{doneByDate}</div>
+                    </td>
+                    <td style={{ border: '1px solid #e0e0e0', padding: '6px' }}>
+                      <div style={{ fontWeight: '700', color: '#1565c0' }}>{approvedByName || '-'}</div>
+                      <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{approvedByDate}</div>
+                    </td>
+                    <td style={{ border: '1px solid #e0e0e0', padding: '6px', textAlign: 'center' }}>
+                      {h.remarks ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenHistory(entry, 'single-remark', h)}
+                          style={{ fontSize: '11px', padding: '2px 6px', background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: '6px', color: '#e65100', cursor: 'pointer', fontWeight: '700' }}
+                        >
+                          Remark
+                        </button>
+                      ) : '-'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       );
       setHistoryModal({ visible: true, title: modalTitle, content: histContent });
@@ -1230,8 +1259,16 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
                                         {(() => {
                                           const party = (entry.partyName || '').trim();
                                           const lorry = entry.lorryNumber ? entry.lorryNumber.toUpperCase() : '';
-                                          if (party) return toTitleCase(party);
-                                          return lorry || '-';
+                                          const label = party ? toTitleCase(party) : (lorry || '-');
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenHistory(entry, 'all')}
+                                              style={{ background: 'transparent', border: 'none', color: '#1565c0', textDecoration: 'underline', cursor: 'pointer', fontWeight: '700', fontSize: '14px', padding: 0 }}
+                                            >
+                                              {label}
+                                            </button>
+                                          );
                                         })()}
                                       </td>
                                       <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'left', fontSize: '13px' }}>{toTitleCase(entry.location) || '-'}</td>

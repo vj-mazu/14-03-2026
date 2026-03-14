@@ -414,7 +414,10 @@ const AdminSampleBook: React.FC = () => {
                                     };
                                     const displayVal = (rawVal: any, numericVal: any) => {
                                         const raw = rawVal != null ? String(rawVal).trim() : '';
-                                        if (raw) return raw;
+                                        if (raw) {
+                                            const num = Number(raw);
+                                            if (!Number.isFinite(num) || num !== 0) return raw;
+                                        }
                                         return fmt(numericVal);
                                     };
                                     const fmtB = (v: any, useBrackets = false) => {
