@@ -364,24 +364,26 @@ class SampleEntryService {
       // One-time edit restriction for staff:
       // We only allow ONE edit for any of the critical fields per entry.
       // Critical fields: Party Name, Bags, Broker Name, and Variety.
-      if (userRole === 'staff') {
+      const limitedRoles = new Set(['staff', 'physical_supervisor', 'paddy_supervisor']);
+      if (limitedRoles.has(userRole)) {
+        const normalizeText = (value) => String(value ?? '').trim().toLowerCase();
         const hasChanged = (field, newVal, oldVal) => {
           if (field === 'bags') return Number(newVal) !== Number(oldVal);
-          return String(newVal || '').trim().toLowerCase() !== String(oldVal || '').trim().toLowerCase();
+          return normalizeText(newVal) !== normalizeText(oldVal);
         };
 
         const changedFields = [];
-        if (updates.partyName !== undefined && hasChanged('partyName', updates.partyName, currentEntry.partyName)) changedFields.push('Party Name');
-        if (updates.bags !== undefined && !isNaN(Number(updates.bags)) && hasChanged('bags', updates.bags, currentEntry.bags)) changedFields.push('Bags');
-        if (updates.brokerName !== undefined && hasChanged('brokerName', updates.brokerName, currentEntry.brokerName)) changedFields.push('Broker Name');
-        if (updates.variety !== undefined && hasChanged('variety', updates.variety, currentEntry.variety)) changedFields.push('Variety');
+        if (updates.partyName !== undefined && hasChanged('partyName', updates.partyName, currentEntry.partyName)) {
+          changedFields.push('Party Name');
+        }
+        if (updates.bags !== undefined && !isNaN(Number(updates.bags)) && hasChanged('bags', updates.bags, currentEntry.bags)) {
+          changedFields.push('Bags');
+        }
 
         if (changedFields.length > 0) {
-          // If critical fields have already been edited exactly once by staff
           if (currentEntry.staffPartyNameEdits >= 1) {
             throw new Error(`This entry details can only be edited once by staff. Your previous edit to ${changedFields.join(', ')} has already consumed the allowance.`);
           }
-          // Increment the detail-specific edit counter
           updates.staffPartyNameEdits = (currentEntry.staffPartyNameEdits || 0) + 1;
         }
       }

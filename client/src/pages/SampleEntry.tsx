@@ -82,7 +82,7 @@ const SampleEntryPage: React.FC<{
     return Number.isFinite(time) ? time : 0;
   };
   const isRiceQualityEntry = filterEntryType === 'RICE_SAMPLE' || selectedEntry?.entryType === 'RICE_SAMPLE';
-  const isStaffUser = user?.role === 'staff';
+  const isStaffUser = ['staff', 'physical_supervisor', 'paddy_supervisor'].includes(String(user?.role || '').toLowerCase());
   const detailEditLocked = isStaffUser && (editingEntry as any)?.staffPartyNameEdits >= 1;
   const qualityEditLocked = isStaffUser && (editingEntry as any)?.staffBagsEdits >= 1;
   // Backward compatibility for existing field locks in Edit Modal
@@ -352,10 +352,14 @@ const SampleEntryPage: React.FC<{
     setFilterDateFrom('');
     setFilterDateTo('');
     setFilterBroker('');
+    setFilterVariety('');
+    setFilterLocation('');
+    setFilterCollectedBy('');
     if (page === 1) {
-      loadEntries(1, '', '', '', '', '', '', '');
+      loadEntries(1, '', '', '', '', '', '');
     } else {
       setPage(1);
+      loadEntries(1, '', '', '', '', '', '');
     }
   };
 
@@ -540,6 +544,7 @@ const SampleEntryPage: React.FC<{
       // Close modal after successful save
       setShowModal(false);
       showNotification('Sample entry created successfully', 'success');
+      setActiveTab(selectedEntryType === 'LOCATION_SAMPLE' ? 'LOCATION_SAMPLE' : 'MILL_SAMPLE');
       setSampleCollectType('broker');
       setFormData({
         entryDate: new Date().toISOString().split('T')[0],
@@ -1163,15 +1168,7 @@ const SampleEntryPage: React.FC<{
                 style={{ padding: '8px 16px', border: 'none', borderRadius: '4px', backgroundColor: '#3498db', color: 'white', fontSize: '12px', fontWeight: '700', cursor: 'pointer', transition: 'background 0.2s' }}>
                 Apply Filters
               </button>
-              <button onClick={() => {
-                setFilterDateFrom('');
-                setFilterDateTo('');
-                setFilterBroker('');
-                setFilterVariety('');
-                setFilterLocation('');
-                setFilterCollectedBy('');
-                loadEntries(1, '', '', '', '', '', '', '');
-              }}
+              <button onClick={handleClearFilters}
                 style={{ padding: '8px 16px', border: '1px solid #e74c3c', borderRadius: '4px', backgroundColor: '#fff', color: '#e74c3c', fontSize: '12px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                 Clear
               </button>
@@ -2926,9 +2923,14 @@ const SampleEntryPage: React.FC<{
                 <div>
                   <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: '#555', fontSize: '12px' }}>Bags {requiredMark}</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     value={formData.bags}
-                    onChange={(e) => setFormData({ ...formData, bags: e.target.value })}
+                    onChange={(e) => {
+                      const maxDigits = formData.packaging === '75' ? 4 : 5;
+                      const val = e.target.value.replace(/[^0-9]/g, '').substring(0, maxDigits);
+                      setFormData({ ...formData, bags: val });
+                    }}
                     disabled={bagsEditLocked}
                     style={{
                       width: '100%',
@@ -2946,7 +2948,13 @@ const SampleEntryPage: React.FC<{
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: '#555', fontSize: '12px' }}>Packaging {requiredMark}</label>
-                  <select value={formData.packaging} onChange={(e) => setFormData({ ...formData, packaging: e.target.value })}
+                  <select
+                    value={formData.packaging}
+                    onChange={(e) => {
+                      const nextPackaging = e.target.value;
+                      const nextBags = nextPackaging === '75' ? formData.bags.substring(0, 4) : formData.bags;
+                      setFormData({ ...formData, packaging: nextPackaging, bags: nextBags });
+                    }}
                     style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}>
                     <option value="75">75 Kg</option>
                     <option value="40">40 Kg</option>
@@ -3264,7 +3272,10 @@ const SampleEntryPage: React.FC<{
                 {editingEntry.entryType === 'DIRECT_LOADED_VEHICLE' && (
                   <div>
                     <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: '#555', fontSize: '12px' }}>Lorry Number {requiredMark}</label>
-                    <input value={formData.lorryNumber} onChange={(e) => handleInputChange('lorryNumber', e.target.value)}
+                    <input
+                      value={formData.lorryNumber}
+                      onChange={(e) => handleInputChange('lorryNumber', e.target.value)}
+                      maxLength={11}
                       style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }} />
                   </div>
                 )}

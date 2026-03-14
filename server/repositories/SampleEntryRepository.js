@@ -229,7 +229,12 @@ class SampleEntryRepository {
           ]
         },
         { workflowStatus: { [Op.ne]: 'FAILED' } }, // Exclude permanently failed
-        { entryType: { [Op.ne]: 'LOCATION_SAMPLE' } } // Strictly non-location samples
+        {
+          [Op.or]: [
+            { entryType: { [Op.ne]: 'LOCATION_SAMPLE' } },
+            { entryType: 'LOCATION_SAMPLE', sampleGivenToOffice: true }
+          ]
+        }
       ];
     } else if (requestedStatus === 'LOCATION_SAMPLE') {
       // Staff view: Location Sample tab
@@ -241,11 +246,12 @@ class SampleEntryRepository {
           ]
         },
         { workflowStatus: { [Op.ne]: 'FAILED' } },
-        { entryType: 'LOCATION_SAMPLE' }
+        { entryType: 'LOCATION_SAMPLE' },
+        { sampleGivenToOffice: { [Op.ne]: true } }
       ];
     } else if (requestedStatus === 'SAMPLE_BOOK') {
       // Staff view: Sample Book (completed/archived staff entries)
-      where.workflowStatus = { [Op.ne]: 'STAFF_ENTRY' };
+      where.workflowStatus = { [Op.ne]: 'FAILED' };
     } else if (requestedStatus) {
       if (requestedStatus === 'QUALITY_CHECK' && filters.entryType === 'RICE_SAMPLE') {
         where.workflowStatus = {
@@ -292,7 +298,12 @@ class SampleEntryRepository {
 
     if (role !== 'admin' && role !== 'manager') {
       if (staffType === 'mill') {
-        staffVisibilityClause = { entryType: { [Op.ne]: 'LOCATION_SAMPLE' } };
+        staffVisibilityClause = {
+          [Op.or]: [
+            { entryType: { [Op.ne]: 'LOCATION_SAMPLE' } },
+            { entryType: 'LOCATION_SAMPLE', sampleGivenToOffice: true }
+          ]
+        };
       } else {
         // ROBUST PRIVACY FOR ALL OTHER STAFF/SUPERVISORS:
         // Location samples are private UNTIL:
