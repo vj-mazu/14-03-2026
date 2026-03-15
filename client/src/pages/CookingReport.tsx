@@ -53,6 +53,17 @@ const toSentenceCase = (value: string) => {
   if (!normalized) return '';
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 };
+const formatShortDateTime = (value?: string | null) => {
+  if (!value) return '-';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '-';
+  return dt.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+};
+const getPartyLabel = (entry: any) => {
+  const party = (entry?.partyName || '').trim();
+  const lorry = entry?.lorryNumber ? String(entry.lorryNumber).toUpperCase() : '';
+  return party ? toTitleCase(party) : (lorry || '-');
+};
 const getTimeValue = (value?: string | null) => {
   if (!value) return 0;
   const time = new Date(value).getTime();
@@ -118,6 +129,9 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
 
   // --- HISTORY MODAL STATES ---
   const [historyModal, setHistoryModal] = useState<{ visible: boolean; title: string; content: React.ReactNode }>({ visible: false, title: '', content: null });
+  const [detailEntry, setDetailEntry] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [remarksPopup, setRemarksPopup] = useState<{ isOpen: boolean; text: string }>({ isOpen: false, text: '' });
 
   // --- NEW RICE FEATURE STATES ---
   const [activeTab, setActiveTab] = useState<'PADDY_COOKING_REPORT' | 'RICE_COOKING_REPORT' | 'RESAMPLE_COOKING_REPORT'>(
@@ -398,8 +412,45 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
         ? new Date(value).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
         : '-';
 
+      const entrySummary = (() => {
+        if (type !== 'all') return null;
+        const qp = entry.qualityParameters;
+        const entryDateText = entry.entryDate
+          ? new Date(entry.entryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '-';
+        const cutText = qp?.cutting1 && qp?.cutting2 ? `${qp.cutting1}x${qp.cutting2}` : '-';
+        const bendText = qp?.bend1 && qp?.bend2 ? `${qp.bend1}x${qp.bend2}` : '-';
+        const moistureText = qp?.moisture != null && qp?.moisture !== '' ? `${qp.moisture}%` : '-';
+        const grainsText = qp?.grainsCount ? `(${qp.grainsCount})` : '-';
+        return (
+          <div style={{ marginBottom: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', marginBottom: '8px' }}>Entry Details</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', fontSize: '12px' }}>
+              <div><strong>Date:</strong> {entryDateText}</div>
+              <div><strong>Bags:</strong> {entry.bags?.toLocaleString('en-IN') || '-'}</div>
+              <div><strong>Pkg:</strong> {entry.packaging || '-'}</div>
+              <div><strong>Variety:</strong> {toTitleCase(entry.variety) || '-'}</div>
+              <div><strong>Location:</strong> {toTitleCase(entry.location) || '-'}</div>
+              <div><strong>Collected By:</strong> {toTitleCase(entry.sampleCollectedBy || entry.creator?.username || '-') || '-'}</div>
+            </div>
+            {qp && (
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', marginBottom: '6px' }}>Quality Parameters</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '6px', fontSize: '12px' }}>
+                  <div><strong>Moisture:</strong> {moistureText}</div>
+                  <div><strong>Cutting:</strong> {cutText}</div>
+                  <div><strong>Bend:</strong> {bendText}</div>
+                  <div><strong>Grains:</strong> {grainsText}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })();
+
       const histContent = (
         <div style={{ maxHeight: '420px', overflowY: 'auto', overflowX: 'auto' }}>
+          {entrySummary}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '700px' }}>
             <thead>
               <tr style={{ background: '#f5f5f5' }}>
@@ -468,6 +519,21 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
       setHistoryModal({ visible: true, title: 'Remarks', content: <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap' }}>{cr.remarks}</div> });
     } else {
       setHistoryModal({ visible: true, title: modalTitle, content: <div style={{ fontSize: '14px', color: '#666', fontStyle: 'italic' }}>No history for this entry.</div> });
+    }
+  };
+
+  const handleOpenDetail = async (entry: SampleEntry) => {
+    try {
+      setDetailLoading(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/sample-entries/${entry.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDetailEntry(response.data || entry);
+    } catch (error: any) {
+      showNotification(error.response?.data?.error || 'Failed to load entry details', 'error');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -1095,17 +1161,25 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
                                         {(() => {
                                           const party = (entry.partyName || '').trim();
                                           const lorry = entry.lorryNumber ? entry.lorryNumber.toUpperCase() : '';
-                                          if (party) {
-                                            return (
-                                              <>
-                                                {toTitleCase(party)}
-                                                {entry.entryType === 'DIRECT_LOADED_VEHICLE' && lorry ? (
-                                                  <div style={{ fontSize: '13px', color: '#1565c0', fontWeight: '600' }}>{lorry}</div>
-                                                ) : null}
-                                              </>
-                                            );
-                                          }
-                                          return lorry || '-';
+                                          const label = party ? toTitleCase(party) : (lorry || '-');
+                                          const showLorrySecondLine = entry.entryType === 'DIRECT_LOADED_VEHICLE'
+                                            && !!party
+                                            && !!lorry
+                                            && party.toUpperCase() !== lorry;
+                                          return (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenDetail(entry)}
+                                                style={{ background: 'transparent', border: 'none', color: '#1565c0', textDecoration: 'underline', cursor: 'pointer', fontWeight: '700', fontSize: '14px', padding: 0, textAlign: 'left' }}
+                                              >
+                                                {label}
+                                              </button>
+                                              {showLorrySecondLine ? (
+                                                <div style={{ fontSize: '13px', color: '#1565c0', fontWeight: '600' }}>{lorry}</div>
+                                              ) : null}
+                                            </div>
+                                          );
                                         })()}
                                       </td>
                                       <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'left', fontSize: '13px' }}>{toTitleCase(entry.location) || '-'}</td>
@@ -1536,6 +1610,410 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
         )
       }
 
+      {/* Detail Popup (same design as Admin Sample Book) */}
+      {detailEntry && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1200
+          }}
+          onClick={() => setDetailEntry(null)}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              width: '500px',
+              maxWidth: '90vw',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: detailEntry.entryType === 'DIRECT_LOADED_VEHICLE'
+                  ? '#1565c0'
+                  : detailEntry.entryType === 'LOCATION_SAMPLE'
+                    ? '#e67e22'
+                    : '#4caf50',
+                padding: '16px 20px',
+                borderRadius: '8px 8px 0 0',
+                color: 'white',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', marginBottom: '4px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '800', opacity: 0.9, textAlign: 'left' }}>
+                  {new Date(detailEntry.entryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: '900', letterSpacing: '1.5px', textTransform: 'uppercase', textAlign: 'center' }}>
+                  {detailEntry.entryType === 'DIRECT_LOADED_VEHICLE'
+                    ? 'Ready Lorry'
+                    : detailEntry.entryType === 'LOCATION_SAMPLE'
+                      ? 'Location Sample'
+                      : 'Mill Sample'}
+                </div>
+                <div></div>
+              </div>
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: '900',
+                  letterSpacing: '-0.5px',
+                  marginTop: '4px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '85%'
+                }}
+              >
+                {toTitleCase(detailEntry.brokerName) || '-'}
+              </div>
+              <button
+                onClick={() => setDetailEntry(null)}
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'rgba(255,255,255,0.25)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  color: 'white',
+                  fontWeight: '900',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                }}
+              >
+                X
+              </button>
+            </div>
+            <div style={{ padding: '24px', backgroundColor: '#fff', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px' }}>
+              {detailLoading && (
+                <div style={{ padding: '12px 0', fontSize: '13px', color: '#666' }}>Loading details...</div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                {[
+                  ['Entry Date', new Date(detailEntry.entryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })],
+                  ['Total Bags', detailEntry.bags?.toLocaleString('en-IN')],
+                  ['Packaging', `${detailEntry.packaging || '75'} Kg`],
+                  ['Variety', toTitleCase(detailEntry.variety || '-')],
+                ].map(([label, value], i) => (
+                  <div key={i} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{value || '-'}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '12px', marginBottom: '24px' }}>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Party Name</div>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getPartyLabel(detailEntry)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Location</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toTitleCase(detailEntry.location || '-')}</div>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collected By</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toTitleCase(detailEntry.sampleCollectedBy || '-')}</div>
+                </div>
+              </div>
+
+              <h4 style={{ margin: '0 0 10px', fontSize: '13px', color: '#e67e22', borderBottom: '2px solid #e67e22', paddingBottom: '6px' }}>Quality Parameters</h4>
+              {(() => {
+                const qpList = (detailEntry as any).qualityAttemptDetails && (detailEntry as any).qualityAttemptDetails.length > 0
+                  ? [...(detailEntry as any).qualityAttemptDetails].sort((a: any, b: any) => (a.attemptNo || 0) - (b.attemptNo || 0))
+                  : (detailEntry as any).qualityParameters ? [(detailEntry as any).qualityParameters] : [];
+                if (qpList.length === 0) return <div style={{ color: '#999', textAlign: 'center', padding: '12px', fontSize: '12px' }}>No quality data</div>;
+
+                const trimZeros = (raw: string) => raw.replace(/(\\.\\d*?[1-9])0+$/, '$1').replace(/\\.0+$/, '');
+                const displayVal = (rawVal: any, numericVal: any) => {
+                  const raw = rawVal != null ? String(rawVal).trim() : '';
+                  if (raw) {
+                    const num = Number(raw);
+                    if (!Number.isFinite(num) || num !== 0) return raw;
+                  }
+                  const n = Number(numericVal);
+                  if (!Number.isFinite(n) || n === 0) return null;
+                  return trimZeros(String(numericVal));
+                };
+
+                const QItem = ({ label, value }: { label: string; value: React.ReactNode }) => {
+                  const isBold = ['Grains Count', 'Paddy WB'].includes(label);
+                  return (
+                    <div style={{ background: '#f8f9fa', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '2px', fontWeight: '600' }}>{label}</div>
+                      <div style={{ fontSize: '13px', fontWeight: isBold ? '800' : '700', color: isBold ? '#000' : '#2c3e50' }}>{value || '-'}</div>
+                    </div>
+                  );
+                };
+                const qualityPhotoUrl = qpList.find((qp: any) => qp?.uploadFileUrl)?.uploadFileUrl;
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {qualityPhotoUrl && (
+                      <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: '800', color: '#1d4ed8', marginBottom: '8px', textTransform: 'uppercase' }}>Quality Photo</div>
+                        <img
+                          src={`${API_URL.replace('/api', '')}${qualityPhotoUrl}`}
+                          alt="Quality"
+                          style={{ width: '100%', height: '200px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e0e0e0' }}
+                        />
+                      </div>
+                    )}
+                    {qpList.map((qp: any, idx: number) => {
+                      const row1: { label: string; value: React.ReactNode }[] = [];
+                      const moistureVal = displayVal((qp as any).moistureRaw, qp.moisture);
+                      if (moistureVal) {
+                        const dryVal = displayVal((qp as any).dryMoistureRaw, (qp as any).dryMoisture);
+                        row1.push({
+                          label: 'Moisture',
+                          value: dryVal ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                              <span style={{ color: '#e67e22', fontWeight: '800', fontSize: '11px' }}>{dryVal}%</span>
+                              <span>{moistureVal}%</span>
+                            </div>
+                          ) : `${moistureVal}%`
+                        });
+                      }
+                      const cut1 = displayVal((qp as any).cutting1Raw, qp.cutting1);
+                      const cut2 = displayVal((qp as any).cutting2Raw, qp.cutting2);
+                      if (cut1 && cut2) row1.push({ label: 'Cutting', value: `${cut1}x${cut2}` });
+                      const bend1 = displayVal((qp as any).bend1Raw, qp.bend1);
+                      const bend2 = displayVal((qp as any).bend2Raw, qp.bend2);
+                      if (bend1 && bend2) row1.push({ label: 'Bend', value: `${bend1}x${bend2}` });
+                      const grainsVal = displayVal((qp as any).grainsCountRaw, qp.grainsCount);
+                      if (grainsVal) row1.push({ label: 'Grains Count', value: `(${grainsVal})` });
+
+                      const row2: { label: string; value: React.ReactNode }[] = [];
+                      const mixVal = displayVal((qp as any).mixRaw, qp.mix);
+                      const mixSVal = displayVal((qp as any).mixSRaw, qp.mixS);
+                      const mixLVal = displayVal((qp as any).mixLRaw, qp.mixL);
+                      if (mixVal) row2.push({ label: 'Mix', value: mixVal });
+                      if (mixSVal) row2.push({ label: 'S Mix', value: mixSVal });
+                      if (mixLVal) row2.push({ label: 'L Mix', value: mixLVal });
+
+                      const row3: { label: string; value: React.ReactNode }[] = [];
+                      const kanduVal = displayVal((qp as any).kanduRaw, qp.kandu);
+                      const oilVal = displayVal((qp as any).oilRaw, qp.oil);
+                      const skVal = displayVal((qp as any).skRaw, qp.sk);
+                      if (kanduVal) row3.push({ label: 'Kandu', value: kanduVal });
+                      if (oilVal) row3.push({ label: 'Oil', value: oilVal });
+                      if (skVal) row3.push({ label: 'SK', value: skVal });
+
+                      const row4: { label: string; value: React.ReactNode }[] = [];
+                      const wbRVal = displayVal((qp as any).wbRRaw, qp.wbR);
+                      const wbBkVal = displayVal((qp as any).wbBkRaw, qp.wbBk);
+                      const wbTVal = displayVal((qp as any).wbTRaw, qp.wbT);
+                      if (wbRVal) row4.push({ label: 'WB-R', value: wbRVal });
+                      if (wbBkVal) row4.push({ label: 'WB-BK', value: wbBkVal });
+                      if (wbTVal) row4.push({ label: 'WB-T', value: wbTVal });
+
+                      const hasPaddyWb = displayVal((qp as any).paddyWbRaw, qp.paddyWb);
+
+                      return (
+                        <div key={idx} style={qpList.length > 1 ? { background: '#fcfcfc', border: '1px solid #eee', borderRadius: '6px', padding: '12px' } : {}}>
+                          {qpList.length > 1 && (
+                            <div style={{ fontSize: '11px', fontWeight: '800', color: '#e67e22', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              {qp.attemptNo ? `${qp.attemptNo}${qp.attemptNo === 1 ? 'st' : qp.attemptNo === 2 ? 'nd' : 'th'} Quality` : `${idx + 1}${idx === 0 ? 'st' : idx === 1 ? 'nd' : 'th'} Quality`}
+                            </div>
+                          )}
+                          {row1.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${row1.length}, 1fr)`, gap: '8px' }}>{row1.map(item => <QItem key={item.label} label={item.label} value={item.value} />)}</div>}
+                          {row2.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${row2.length}, 1fr)`, gap: '8px' }}>{row2.map(item => <QItem key={item.label} label={item.label} value={item.value} />)}</div>}
+                          {row3.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${row3.length}, 1fr)`, gap: '8px' }}>{row3.map(item => <QItem key={item.label} label={item.label} value={item.value} />)}</div>}
+                          {row4.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${row4.length}, 1fr)`, gap: '8px' }}>{row4.map(item => <QItem key={item.label} label={item.label} value={item.value} />)}</div>}
+                          {hasPaddyWb && (
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px', marginTop: '10px' }}>
+                              <div style={{
+                                background: Number(qp.paddyWb) < 50 ? '#fff5f5' : (Number(qp.paddyWb) <= 50.5 ? '#fff9f0' : '#e8f5e9'),
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                border: `1px solid ${Number(qp.paddyWb) < 50 ? '#feb2b2' : (Number(qp.paddyWb) <= 50.5 ? '#fbd38d' : '#c8e6c9')}`,
+                                textAlign: 'center',
+                                width: '32%'
+                              }}>
+                                <div style={{ fontSize: '10px', color: Number(qp.paddyWb) < 50 ? '#c53030' : (Number(qp.paddyWb) <= 50.5 ? '#9c4221' : '#2e7d32'), marginBottom: '2px', fontWeight: '600' }}>Paddy WB</div>
+                                <div style={{ fontSize: '13px', fontWeight: '800', color: Number(qp.paddyWb) < 50 ? '#d32f2f' : (Number(qp.paddyWb) <= 50.5 ? '#f39c12' : '#1b5e20') }}>{hasPaddyWb}</div>
+                              </div>
+                            </div>
+                          )}
+                          {qp.reportedBy && (
+                            <div style={{ marginTop: '8px' }}>
+                              <div style={{ background: '#f8f9fa', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#666', marginBottom: '2px', fontWeight: '600' }}>Sample Reported By</div>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: '#2c3e50' }}>{toSentenceCase(qp.reportedBy)}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              <h4 style={{ margin: '16px 0 10px', fontSize: '13px', color: '#1565c0', borderBottom: '2px solid #1565c0', paddingBottom: '6px' }}>Cooking History & Remarks</h4>
+              {(() => {
+                const cr = detailEntry.cookingReport;
+                const history = Array.isArray(cr?.history) ? cr!.history : [];
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {history.length > 0 ? (
+                      <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>Cooking Activity Log</div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                            <thead>
+                              <tr style={{ color: '#475569', borderBottom: '2px solid #f1f5f9' }}>
+                                <th style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '800', width: '40px', border: '1px solid #e2e8f0' }}>No</th>
+                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Status</th>
+                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Done By</th>
+                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Approved By</th>
+                                <th style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '800', width: '40px', border: '1px solid #e2e8f0' }}>Rem</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                const rows: any[] = [];
+                                let pendingDone: any = null;
+                                history.forEach((h: any) => {
+                                  const hasStatus = !!h.status;
+                                  if (!hasStatus && h.cookingDoneBy) {
+                                    pendingDone = { doneBy: h.cookingDoneBy, doneDate: h.date || null };
+                                    return;
+                                  }
+                                  if (hasStatus) {
+                                    rows.push({
+                                      status: h.status,
+                                      doneBy: pendingDone?.doneBy || h.cookingDoneBy || '',
+                                      doneDate: pendingDone?.doneDate || null,
+                                      approvedBy: h.approvedBy || '',
+                                      approvedDate: h.date || null,
+                                      remarks: h.remarks || null
+                                    });
+                                    pendingDone = null;
+                                  }
+                                });
+                                if (pendingDone) {
+                                  rows.push({
+                                    status: null,
+                                    doneBy: pendingDone.doneBy,
+                                    doneDate: pendingDone.doneDate || null,
+                                    approvedBy: '',
+                                    approvedDate: null,
+                                    remarks: null
+                                  });
+                                }
+                                return rows.map((h: any, idx: number) => {
+                                  const statusString = (h.status || 'Submitted').toLowerCase();
+                                  const statusColor = statusString === 'pass' ? '#166534' : statusString === 'fail' ? '#991b1b' : statusString === 'recheck' ? '#1565c0' : '#475569';
+                                  const statusBg = statusString === 'pass' ? '#dcfce7' : statusString === 'fail' ? '#fee2e2' : statusString === 'recheck' ? '#e0f2fe' : '#f1f5f9';
+                                  return (
+                                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background-color 0.2s' }}>
+                                      <td style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '700', color: '#64748b', border: '1px solid #e2e8f0' }}>{idx + 1}.</td>
+                                      <td style={{ padding: '8px 4px', border: '1px solid #e2e8f0' }}>
+                                        <span style={{ background: statusBg, color: statusColor, padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase' }}>
+                                          {h.status ? toTitleCase(h.status) : 'Submitted'}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontWeight: '700', fontSize: '13px' }}>{toTitleCase(h.doneBy || '-')}</div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.doneDate)}</div>
+                                      </td>
+                                      <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontWeight: '700', fontSize: '13px' }}>{toTitleCase(h.approvedBy || '-')}</div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.approvedDate)}</div>
+                                      </td>
+                                      <td style={{ textAlign: 'center', padding: '8px 4px', border: '1px solid #e2e8f0' }}>
+                                        {h.remarks ? (
+                                          <button
+                                            onClick={() => setRemarksPopup({ isOpen: true, text: h.remarks || '' })}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', padding: 0, fontWeight: '700', color: '#1565c0' }}
+                                            title="View Remarks"
+                                          >
+                                            View
+                                          </button>
+                                        ) : '-'}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ background: '#fff9f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffe0b2', textAlign: 'center', fontSize: '12px', color: '#e65100' }}>
+                        No cooking history recorded yet.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <button
+                onClick={() => setDetailEntry(null)}
+                style={{ marginTop: '16px', width: '100%', padding: '8px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {remarksPopup.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 3000,
+            padding: '16px'
+          }}
+          onClick={() => setRemarksPopup({ isOpen: false, text: '' })}
+        >
+          <div
+            style={{ background: '#fff', width: '100%', maxWidth: '420px', borderRadius: '10px', boxShadow: '0 16px 50px rgba(0,0,0,0.25)', padding: '16px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937', marginBottom: '10px' }}>Remarks</div>
+            <div style={{ fontSize: '13px', color: '#475569', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', minHeight: '60px' }}>
+              {remarksPopup.text || '-'}
+            </div>
+            <button
+              onClick={() => setRemarksPopup({ isOpen: false, text: '' })}
+              style={{ marginTop: '12px', width: '100%', padding: '9px', background: '#1565c0', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* History Modal */}
       {
         historyModal.visible && (
@@ -1603,3 +2081,5 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
 };
 
 export default CookingReport;
+
+

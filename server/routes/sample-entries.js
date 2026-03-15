@@ -288,7 +288,7 @@ router.post('/', authenticateToken, async (req, res) => {
 // Get sample entries by role
 router.get('/by-role', authenticateToken, async (req, res) => {
   try {
-    const { status, startDate, endDate, broker, variety, party, location, collectedBy, page, pageSize, cursor, entryType, excludeEntryType } = req.query;
+    const { status, startDate, endDate, broker, variety, party, location, collectedBy, page, pageSize, cursor, entryType, excludeEntryType, sampleType } = req.query;
 
     const filters = {
       status,
@@ -299,6 +299,7 @@ router.get('/by-role', authenticateToken, async (req, res) => {
       party,
       location,
       collectedBy,
+      sampleType,
       page: page ? parseInt(page) : 1,
       pageSize: pageSize ? parseInt(pageSize) : 50,
       cursor,

@@ -398,10 +398,10 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             return (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', width: '100%' }}>
                     <span style={{ background: firstStyle.bg, color: firstStyle.color, padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>
-                        {`${getSamplingLabel(1)}: ${firstLabel}`}
+                        {firstLabel}
                     </span>
                     <span style={{ background: secondStyle.bg, color: secondStyle.color, padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>
-                        {`${getSamplingLabel(2)}: ${secondLabel}`}
+                        {secondLabel}
                     </span>
                     {firstRemark && (
                         <button
@@ -426,7 +426,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             if (result === 'pass' || result === 'ok') { 
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', width: '100%' }}>
-                        <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Recheck: Pass</span>
+                        <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Pass</span>
                         {cr.remarks && (
                             <button
                                 type="button"
@@ -634,7 +634,6 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                     {attemptsSorted.map((attempt: any, idx: number) => {
                         const attemptNo = idx + 1;
-                        const label = attemptNo === 1 ? '1st' : attemptNo === 2 ? '2nd' : attemptNo === 3 ? '3rd' : `${attemptNo}th`;
                         const isLast = idx === attemptsSorted.length - 1;
                         const qualityType = getQualityType(attempt);
                         const statusLabel = isLast ? lastStatus : 'Fail';
@@ -652,7 +651,6 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                     : { bg: '#ffe0b2', color: '#e65100' };
                         return (
                             <div key={`${entry.id}-attempt-${attemptNo}`} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '9px', fontWeight: '700', color: '#555', minWidth: '34px' }}>{label}:</span>
                                 <span style={{ background: typeStyle.bg, color: typeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{qualityType}</span>
                                 <span style={{ background: statusStyle.bg, color: statusStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{statusLabel}</span>
                             </div>
@@ -885,9 +883,30 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                                 )}
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', fontWeight: '700', textAlign: 'center', whiteSpace: 'nowrap' }}>{entry.bags || '0'}</td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'center', whiteSpace: 'nowrap' }}>{Number(entry.packaging) === 0 ? 'Loose' : `${entry.packaging || '75'} kg`}</td>
-                                                                <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '14px', cursor: 'pointer', color: '#1565c0', fontWeight: '600', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                                    onClick={() => { setDetailMode('summary'); setDetailEntry(entry); }}>
-                                                                    {getPartyLabel(entry)}
+                                                                <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '14px', color: '#1565c0', fontWeight: '600', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {(() => {
+                                                                        const party = (entry.partyName || '').trim();
+                                                                        const lorry = entry.lorryNumber ? String(entry.lorryNumber).toUpperCase() : '';
+                                                                        const label = party ? toTitleCase(party) : (lorry || '-');
+                                                                        const showLorrySecondLine = entry.entryType === 'DIRECT_LOADED_VEHICLE'
+                                                                            && !!party
+                                                                            && !!lorry
+                                                                            && party.toUpperCase() !== lorry;
+                                                                        return (
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => { setDetailMode('summary'); setDetailEntry(entry); }}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1565c0', textDecoration: 'underline', cursor: 'pointer', fontWeight: '700', fontSize: '14px', padding: 0, textAlign: 'left' }}
+                                                                                >
+                                                                                    {label}
+                                                                                </button>
+                                                                                {showLorrySecondLine ? (
+                                                                                    <div style={{ fontSize: '13px', color: '#1565c0', fontWeight: '600' }}>{lorry}</div>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                 </td>
                                                                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                                                                     {toTitleCase(entry.location) || '-'}
@@ -1397,9 +1416,6 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                 {(() => {
                                     const cr = detailEntry.cookingReport;
                                     const history = Array.isArray(cr?.history) ? cr!.history : [];
-                                    const allRemarks: string[] = [];
-                                    if (cr?.remarks) allRemarks.push(cr.remarks);
-                                    history.forEach(h => { if (h?.remarks) allRemarks.push(h.remarks); });
 
                                     return (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1419,29 +1435,41 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                             </thead>
                                                             <tbody>
                                                                 {(() => {
-                                                                    const processedHistory = (() => {
-                                                                        const result: typeof history = [];
-                                                                        for (let i = 0; i < history.length; i++) {
-                                                                            const current = history[i];
-                                                                            const next = history[i + 1];
-                                                                            
-                                                                            // If current is "Submitted" (no status) and next is a "Decision" (has status),
-                                                                            // we merge them: take the original submission time from 'current' 
-                                                                            // but everything else (status, decision makers) from 'next'.
-                                                                            if (!current.status && next && next.status) {
-                                                                                result.push({
-                                                                                    ...next,
-                                                                                    date: current.date || next.date
-                                                                                });
-                                                                                i++; // skip next since merged
-                                                                                continue;
+                                                                    const rows = (() => {
+                                                                        const result: any[] = [];
+                                                                        let pendingDone: any = null;
+                                                                        history.forEach((h: any) => {
+                                                                            const hasStatus = !!h.status;
+                                                                            if (!hasStatus && h.cookingDoneBy) {
+                                                                                pendingDone = { doneBy: h.cookingDoneBy, doneDate: h.date || null };
+                                                                                return;
                                                                             }
-                                                                            result.push(current);
+                                                                            if (hasStatus) {
+                                                                                result.push({
+                                                                                    status: h.status,
+                                                                                    doneBy: pendingDone?.doneBy || h.cookingDoneBy || '',
+                                                                                    doneDate: pendingDone?.doneDate || null,
+                                                                                    approvedBy: h.approvedBy || '',
+                                                                                    approvedDate: h.date || null,
+                                                                                    remarks: h.remarks || null
+                                                                                });
+                                                                                pendingDone = null;
+                                                                            }
+                                                                        });
+                                                                        if (pendingDone) {
+                                                                            result.push({
+                                                                                status: null,
+                                                                                doneBy: pendingDone.doneBy,
+                                                                                doneDate: pendingDone.doneDate || null,
+                                                                                approvedBy: '',
+                                                                                approvedDate: null,
+                                                                                remarks: null
+                                                                            });
                                                                         }
                                                                         return result;
                                                                     })();
 
-                                                                    return processedHistory.map((h: any, idx) => {
+                                                                    return rows.map((h: any, idx) => {
                                                                         const statusString = (h.status || 'Submitted').toLowerCase();
                                                                         const statusColor = statusString === 'pass' ? '#166534' : statusString === 'fail' ? '#991b1b' : statusString === 'recheck' ? '#1565c0' : '#475569';
                                                                         const statusBg = statusString === 'pass' ? '#dcfce7' : statusString === 'fail' ? '#fee2e2' : statusString === 'recheck' ? '#e0f2fe' : '#f1f5f9';
@@ -1463,12 +1491,12 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                                                     </span>
                                                                                 </td>
                                                                                 <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
-                                                                                    <div style={{ fontWeight: '700', fontSize: '13px' }}>{toTitleCase(h.cookingDoneBy || '-')}</div>
-                                                                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.date)}</div>
+                                                                                    <div style={{ fontWeight: '700', fontSize: '13px' }}>{toTitleCase(h.doneBy || '-')}</div>
+                                                                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.doneDate)}</div>
                                                                                 </td>
                                                                                 <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
                                                                                     <div style={{ fontWeight: '700', fontSize: '13px' }}>{toTitleCase(h.approvedBy || '-')}</div>
-                                                                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.date)}</div>
+                                                                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.approvedDate)}</div>
                                                                                 </td>
                                                                                 <td style={{ textAlign: 'center', padding: '8px 4px', border: '1px solid #e2e8f0' }}>
                                                                                     {h.remarks ? (
@@ -1495,18 +1523,6 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                 </div>
                                             )}
 
-                                            {allRemarks.length > 0 && (
-                                                <div style={{ background: '#f3e5f5', padding: '10px', borderRadius: '8px', border: '1px solid #e1bee7' }}>
-                                                    <div style={{ fontSize: '10px', color: '#7b1fa2', fontWeight: '700', marginBottom: '4px', textTransform: 'uppercase' }}>All Remarks Summary</div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                        {Array.from(new Set(allRemarks)).map((rem, i) => (
-                                                            <div key={i} style={{ fontSize: '12px', color: '#4a148c', paddingBottom: '3px', borderBottom: i === allRemarks.length - 1 ? 'none' : '1px dashed #d1c4e9' }}>
-                                                                {rem}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
                                     );
                                 })()}
@@ -1637,7 +1653,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
-                        zIndex: 1000,
+                        zIndex: 3000,
                         padding: '16px'
                     }}
                     onClick={() => setRemarksPopup({ isOpen: false, text: '' })}

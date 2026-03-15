@@ -276,6 +276,24 @@ class SampleEntryRepository {
       where.entryType = { [Op.ne]: filters.excludeEntryType };
     }
 
+    if (filters.sampleType) {
+      const sampleType = String(filters.sampleType || '').toUpperCase();
+      let typeClause = null;
+      if (sampleType === 'LS') typeClause = { entryType: 'LOCATION_SAMPLE' };
+      if (sampleType === 'RL') typeClause = { entryType: 'DIRECT_LOADED_VEHICLE' };
+      if (sampleType === 'MS') {
+        typeClause = { entryType: { [Op.notIn]: ['LOCATION_SAMPLE', 'DIRECT_LOADED_VEHICLE', 'RICE_SAMPLE'] } };
+      }
+      if (typeClause) {
+        if (where.entryType) {
+          where[Op.and] = [...(where[Op.and] || []), { entryType: where.entryType }, typeClause];
+          delete where.entryType;
+        } else {
+          Object.assign(where, typeClause);
+        }
+      }
+    }
+
     if (filters.startDate || filters.endDate) {
       if (filters.startDate && !filters.endDate) {
         where.entryDate = filters.startDate;

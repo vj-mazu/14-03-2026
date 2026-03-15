@@ -85,6 +85,7 @@ const SampleEntryPage: React.FC<{
   };
   const isRiceQualityEntry = filterEntryType === 'RICE_SAMPLE' || selectedEntry?.entryType === 'RICE_SAMPLE';
   const isStaffUser = ['staff', 'physical_supervisor', 'paddy_supervisor'].includes(String(user?.role || '').toLowerCase());
+  const isMillStaffOnly = String(user?.role || '').toLowerCase() === 'staff' && String(user?.staffType || '').toLowerCase() === 'mill';
   const detailEditLocked = isStaffUser && (editingEntry as any)?.staffPartyNameEdits >= 1;
   const qualityEditLocked = isStaffUser && (editingEntry as any)?.staffBagsEdits >= 1;
   // Backward compatibility for existing field locks in Edit Modal
@@ -109,6 +110,7 @@ const SampleEntryPage: React.FC<{
   const [filterDateTo, setFilterDateTo] = useState('');
   const [filterBroker, setFilterBroker] = useState('');
   const [filterVariety, setFilterVariety] = useState('');
+  const [filterType, setFilterType] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterCollectedBy, setFilterCollectedBy] = useState('');
   const [filtersVisible, setFiltersVisible] = useState(false);
@@ -356,22 +358,29 @@ const SampleEntryPage: React.FC<{
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (isMillStaffOnly && activeTab === 'LOCATION_SAMPLE') {
+      setActiveTab('MILL_SAMPLE');
+    }
+  }, [isMillStaffOnly, activeTab]);
+
   const handleClearFilters = () => {
     setFilterDateFrom('');
     setFilterDateTo('');
     setFilterBroker('');
     setFilterVariety('');
+    setFilterType('');
     setFilterLocation('');
     setFilterCollectedBy('');
     if (page === 1) {
-      loadEntries(1, '', '', '', '', '', '');
+      loadEntries(1, '', '', '', '', '', '', '');
     } else {
       setPage(1);
-      loadEntries(1, '', '', '', '', '', '');
+      loadEntries(1, '', '', '', '', '', '', '');
     }
   };
 
-  const loadEntries = async (targetPage?: number, fFrom?: string, fTo?: string, fBroker?: string, fVariety?: string, fLocation?: string, fCollectedBy?: string, targetStatus?: string) => {
+  const loadEntries = async (targetPage?: number, fFrom?: string, fTo?: string, fBroker?: string, fVariety?: string, fLocation?: string, fCollectedBy?: string, fType?: string, targetStatus?: string) => {
     try {
       setLoading(true);
       const p = targetPage !== undefined ? targetPage : page;
@@ -386,6 +395,7 @@ const SampleEntryPage: React.FC<{
       const v = fVariety !== undefined ? fVariety : filterVariety;
       const l = fLocation !== undefined ? fLocation : filterLocation;
       const cb = fCollectedBy !== undefined ? fCollectedBy : filterCollectedBy;
+      const t = fType !== undefined ? fType : filterType;
       const s = targetStatus !== undefined ? targetStatus : activeTab;
 
       if (dFrom) params.startDate = dFrom;
@@ -394,6 +404,7 @@ const SampleEntryPage: React.FC<{
       if (v) params.variety = v;
       if (l) params.location = l;
       if (cb) params.collectedBy = cb;
+      if (t) params.sampleType = t;
       if (s) params.status = s;
       if (filterEntryType) params.entryType = filterEntryType;
       if (excludeEntryType) params.excludeEntryType = excludeEntryType;
@@ -1103,8 +1114,7 @@ const SampleEntryPage: React.FC<{
           .filter((tab) => {
             // Rice Sample logic: No Location Sample tab
             if (filterEntryType === 'RICE_SAMPLE') return tab !== 'LOCATION_SAMPLE';
-            
-            // For Paddy Sample Reports: Show all 3 tabs to everyone (Admin, Manager, all Staff)
+            if (isMillStaffOnly) return tab !== 'LOCATION_SAMPLE';
             return true;
           })
           .map((tab) => (
@@ -1221,6 +1231,18 @@ const SampleEntryPage: React.FC<{
                 {varieties.map((v, i) => <option key={i} value={v}>{v}</option>)}
               </select>
             </div>
+            {filterEntryType !== 'RICE_SAMPLE' && (
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#1a237e', marginBottom: '4px' }}>Type</label>
+                <select value={filterType} onChange={e => setFilterType(e.target.value)}
+                  style={{ padding: '6px 10px', border: '1px solid #ced4da', borderRadius: '4px', fontSize: '13px', minWidth: '110px', backgroundColor: 'white' }}>
+                  <option value="">All Types</option>
+                  <option value="MS">MS</option>
+                  <option value="LS">LS</option>
+                  <option value="RL">RL</option>
+                </select>
+              </div>
+            )}
             <div>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#1a237e', marginBottom: '4px' }}>Collected By</label>
               <input type="text" value={filterCollectedBy} onChange={e => setFilterCollectedBy(e.target.value)} placeholder="Search collector..."
@@ -3666,9 +3688,6 @@ const SampleEntryPage: React.FC<{
               {(() => {
                 const cr = (detailEntry as any).cookingReport;
                 const history = Array.isArray(cr?.history) ? cr!.history : [];
-                const allRemarks: string[] = [];
-                if (cr?.remarks) allRemarks.push(cr.remarks);
-                history.forEach((h: any) => { if (h?.remarks) allRemarks.push(h.remarks); });
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -3681,27 +3700,47 @@ const SampleEntryPage: React.FC<{
                               <tr style={{ color: '#475569', borderBottom: '2px solid #f1f5f9' }}>
                                 <th style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '800', width: '30px', border: '1px solid #e2e8f0' }}>No</th>
                                 <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Status</th>
-                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Done / Approved By</th>
+                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Done By</th>
+                                <th style={{ textAlign: 'left', padding: '8px 4px', fontWeight: '800', border: '1px solid #e2e8f0' }}>Approved By</th>
                               </tr>
                             </thead>
                             <tbody>
                               {(() => {
-                                const processedHistory = (() => {
+                                const rows = (() => {
                                   const result: any[] = [];
-                                  for (let i = 0; i < history.length; i++) {
-                                    const current = history[i];
-                                    const next = history[i + 1];
-                                    if (!current.status && next && next.status) {
-                                      result.push({ ...next, date: current.date || next.date });
-                                      i++;
-                                      continue;
+                                  let pendingDone: any = null;
+                                  history.forEach((h: any) => {
+                                    const hasStatus = !!h.status;
+                                    if (!hasStatus && h.cookingDoneBy) {
+                                      pendingDone = { doneBy: h.cookingDoneBy, doneDate: h.date || null };
+                                      return;
                                     }
-                                    result.push(current);
+                                    if (hasStatus) {
+                                      result.push({
+                                        status: h.status,
+                                        doneBy: pendingDone?.doneBy || h.cookingDoneBy || '',
+                                        doneDate: pendingDone?.doneDate || null,
+                                        approvedBy: h.approvedBy || '',
+                                        approvedDate: h.date || null,
+                                        remarks: h.remarks || null
+                                      });
+                                      pendingDone = null;
+                                    }
+                                  });
+                                  if (pendingDone) {
+                                    result.push({
+                                      status: null,
+                                      doneBy: pendingDone.doneBy,
+                                      doneDate: pendingDone.doneDate || null,
+                                      approvedBy: '',
+                                      approvedDate: null,
+                                      remarks: null
+                                    });
                                   }
                                   return result;
                                 })();
 
-                                return processedHistory.map((h: any, idx: number) => {
+                                return rows.map((h: any, idx: number) => {
                                   const statusString = (h.status || 'Submitted').toLowerCase();
                                   const statusColor = statusString === 'pass' ? '#166534' : statusString === 'fail' ? '#991b1b' : statusString === 'recheck' ? '#1565c0' : '#475569';
                                   const statusBg = statusString === 'pass' ? '#dcfce7' : statusString === 'fail' ? '#fee2e2' : statusString === 'recheck' ? '#e0f2fe' : '#f1f5f9';
@@ -3715,8 +3754,12 @@ const SampleEntryPage: React.FC<{
                                         </span>
                                       </td>
                                       <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
-                                        <div style={{ fontWeight: '700', fontSize: '12px' }}>{toTitleCase(h.cookingDoneBy || h.approvedBy || '-')}</div>
-                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.date)}</div>
+                                        <div style={{ fontWeight: '700', fontSize: '12px' }}>{toTitleCase(h.doneBy || '-')}</div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.doneDate)}</div>
+                                      </td>
+                                      <td style={{ padding: '8px 4px', color: '#334155', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontWeight: '700', fontSize: '12px' }}>{toTitleCase(h.approvedBy || '-')}</div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>{formatShortDateTime(h.approvedDate)}</div>
                                       </td>
                                     </tr>
                                   );
@@ -3732,18 +3775,6 @@ const SampleEntryPage: React.FC<{
                       </div>
                     )}
 
-                    {allRemarks.length > 0 && (
-                      <div style={{ background: '#f3e5f5', padding: '10px', borderRadius: '8px', border: '1px solid #e1bee7' }}>
-                        <div style={{ fontSize: '10px', color: '#7b1fa2', fontWeight: '700', marginBottom: '4px', textTransform: 'uppercase' }}>Remarks History</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {Array.from(new Set(allRemarks)).map((rem, i) => (
-                            <div key={i} style={{ fontSize: '12px', color: '#4a148c', paddingBottom: '3px', borderBottom: i === allRemarks.length - 1 ? 'none' : '1px dashed #d1c4e9' }}>
-                              {rem}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })()}
