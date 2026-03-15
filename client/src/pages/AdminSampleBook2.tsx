@@ -160,12 +160,12 @@ const formatShortDateTime = (value?: string | null) => {
     }
 };
 const hasAlphaOrPositiveValue = (val: any) => {
-    if (val === null || val === undefined || val === '') return false;
-    const raw = String(val).trim();
-    if (!raw) return false;
-    if (/[a-zA-Z]/.test(raw)) return true;
-    const num = parseFloat(raw);
-    return Number.isFinite(num) && num !== 0;
+  if (val === null || val === undefined || val === '') return false;
+  const raw = String(val).trim();
+  if (!raw) return false;
+  if (/[a-zA-Z]/.test(raw)) return true;
+  const num = parseFloat(raw);
+  return Number.isFinite(num);
 };
 
 const getResampleRoundLabel = (attempts: number) => {

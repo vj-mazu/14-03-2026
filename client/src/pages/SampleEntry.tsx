@@ -53,7 +53,7 @@ const SampleEntryPage: React.FC<{
 
   // Sample Collected By — radio state
   const [sampleCollectType, setSampleCollectType] = useState<'broker' | 'supervisor'>('broker');
-  const [paddySupervisors, setPaddySupervisors] = useState<{ id: number; username: string; staffType?: string | null }[]>([]);
+  const [paddySupervisors, setPaddySupervisors] = useState<{ id: number; username: string; fullName?: string | null; staffType?: string | null }[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
 
   // Title Case helper: first letter of each word
@@ -61,6 +61,14 @@ const SampleEntryPage: React.FC<{
     const str = typeof value === 'string' ? value.trim() : '';
     if (!str) return '';
     return str.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+  };
+  const getCollectorLabel = (value?: string | null) => {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return '-';
+    if (raw.toLowerCase() === 'broker office sample') return 'Broker Office Sample';
+    const match = paddySupervisors.find((sup) => String(sup.username || '').trim().toLowerCase() === raw.toLowerCase());
+    if (match?.fullName) return toTitleCase(match.fullName);
+    return toTitleCase(raw);
   };
   const formatShortDateTime = (dateStr: string | null) => {
     if (!dateStr) return '-';
@@ -312,7 +320,7 @@ const SampleEntryPage: React.FC<{
     if (!raw) return false;
     if (/[a-zA-Z]/.test(raw)) return true;
     const num = parseFloat(raw);
-    return Number.isFinite(num) && num !== 0;
+    return Number.isFinite(num);
   };
   const validateEntryForm = (entryType: EntryType, data: typeof formData) => {
     const isEmpty = (value: string) => !String(value || '').trim();
@@ -501,7 +509,7 @@ const SampleEntryPage: React.FC<{
 
       // Fetch paddy supervisors (mill staff) for Sample Collected By dropdown
       try {
-        const supervisorRes = await axios.get<{ success: boolean, users: Array<{ id: number, username: string, staffType?: string | null }> }>(`${API_URL}/sample-entries/paddy-supervisors`, { headers });
+        const supervisorRes = await axios.get<{ success: boolean, users: Array<{ id: number, username: string, fullName?: string | null, staffType?: string | null }> }>(`${API_URL}/sample-entries/paddy-supervisors`, { headers });
         if (supervisorRes.data.success) {
           setPaddySupervisors(supervisorRes.data.users);
         }
@@ -836,7 +844,7 @@ const SampleEntryPage: React.FC<{
             if (!raw) return false;
             if (/[a-zA-Z]/.test(raw)) return true;
             const num = parseFloat(raw);
-            return Number.isFinite(num) && num > 0;
+            return Number.isFinite(num);
           };
           if (hasAlphaOrPositive(qp.mixS)) setSmixEnabled(true);
           if (hasAlphaOrPositive(qp.mixL)) setLmixEnabled(true);
@@ -909,26 +917,30 @@ const SampleEntryPage: React.FC<{
     try {
       setIsSubmitting(true);
       const formDataToSend = new FormData();
-      formDataToSend.append('moisture', qualityData.moisture);
-      formDataToSend.append('cutting1', selectedEntry.entryType === 'RICE_SAMPLE' ? qualityData.cutting1 || '0' : qualityData.cutting1 || '0');
-      formDataToSend.append('cutting2', selectedEntry.entryType === 'RICE_SAMPLE' ? qualityData.cutting2 || '0' : qualityData.cutting2 || '0');
-      formDataToSend.append('bend1', selectedEntry.entryType === 'RICE_SAMPLE' ? qualityData.bend1 || '0' : qualityData.bend1 || '0');
-      formDataToSend.append('bend2', selectedEntry.entryType === 'RICE_SAMPLE' ? qualityData.bend2 || '0' : qualityData.bend2 || '0');
+      const toFormValue = (value: string) => {
+        if (value === undefined || value === null) return '';
+        return String(value).trim() === '' ? '' : String(value);
+      };
+      formDataToSend.append('moisture', toFormValue(qualityData.moisture));
+      formDataToSend.append('cutting1', toFormValue(qualityData.cutting1));
+      formDataToSend.append('cutting2', toFormValue(qualityData.cutting2));
+      formDataToSend.append('bend1', toFormValue(qualityData.bend1));
+      formDataToSend.append('bend2', toFormValue(qualityData.bend2));
       if (selectedEntry.entryType === 'RICE_SAMPLE' && qualityData.gramsReport) {
         formDataToSend.append('gramsReport', qualityData.gramsReport);
       }
-      formDataToSend.append('mixS', smixEnabled ? qualityData.mixS || '0' : '0');
-      formDataToSend.append('mixL', lmixEnabled ? qualityData.mixL || '0' : '0');
-      formDataToSend.append('mix', qualityData.mix || '0');
-      formDataToSend.append('kandu', qualityData.kandu || '0');
-      formDataToSend.append('oil', qualityData.oil || '0');
-      formDataToSend.append('sk', qualityData.sk || '0');
-      formDataToSend.append('grainsCount', qualityData.grainsCount || '0');
-      formDataToSend.append('wbR', wbEnabled ? qualityData.wbR || '0' : '0');
-      formDataToSend.append('wbBk', wbEnabled ? qualityData.wbBk || '0' : '0');
-      formDataToSend.append('wbT', qualityData.wbT || '0');
-      formDataToSend.append('paddyWb', paddyWbEnabled ? qualityData.paddyWb || '0' : '0');
-      formDataToSend.append('dryMoisture', dryMoistureEnabled ? qualityData.dryMoisture || '0' : '0');
+      formDataToSend.append('mixS', smixEnabled ? toFormValue(qualityData.mixS) : '');
+      formDataToSend.append('mixL', lmixEnabled ? toFormValue(qualityData.mixL) : '');
+      formDataToSend.append('mix', toFormValue(qualityData.mix));
+      formDataToSend.append('kandu', toFormValue(qualityData.kandu));
+      formDataToSend.append('oil', toFormValue(qualityData.oil));
+      formDataToSend.append('sk', toFormValue(qualityData.sk));
+      formDataToSend.append('grainsCount', toFormValue(qualityData.grainsCount));
+      formDataToSend.append('wbR', wbEnabled ? toFormValue(qualityData.wbR) : '');
+      formDataToSend.append('wbBk', wbEnabled ? toFormValue(qualityData.wbBk) : '');
+      formDataToSend.append('wbT', toFormValue(qualityData.wbT));
+      formDataToSend.append('paddyWb', paddyWbEnabled ? toFormValue(qualityData.paddyWb) : '');
+      formDataToSend.append('dryMoisture', dryMoistureEnabled ? toFormValue(qualityData.dryMoisture) : '');
       const reportedByValue = qualityData.reportedBy || '';
       if (!reportedByValue) {
         showNotification('Sample Reported By is required', 'error');
@@ -1528,7 +1540,7 @@ const SampleEntryPage: React.FC<{
                                           style={{ padding: '2px 4px', fontSize: '10px', borderRadius: '3px', border: '1px solid #ccc' }}
                                         >
                                           <option value="">Select Staff</option>
-                                          {locationSupervisors.map(sup => <option key={sup.id} value={sup.username}>{sup.username}</option>)}
+                                          {locationSupervisors.map(sup => <option key={sup.id} value={sup.username}>{toTitleCase(sup.fullName || sup.username)}</option>)}
                                         </select>
                                         <button
                                           onClick={async () => {
@@ -1771,7 +1783,7 @@ const SampleEntryPage: React.FC<{
                                   </div>
                                 </td>
                                 <td style={{ padding: '1px 8px', textAlign: 'left', fontSize: '11px', lineHeight: '1.2', verticalAlign: 'middle' }}>
-                                  {entry.sampleCollectedBy ? toTitleCase(entry.sampleCollectedBy) : ((entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-')}
+                                  {entry.sampleCollectedBy ? getCollectorLabel(entry.sampleCollectedBy) : ((entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-')}
                                 </td>
                               </tr>
                             );
@@ -2223,7 +2235,7 @@ const SampleEntryPage: React.FC<{
                           >
                             <option value="">-- Select from list --</option>
                             {paddySupervisors.map(s => (
-                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -2321,7 +2333,7 @@ const SampleEntryPage: React.FC<{
                           >
                             <option value="">-- Select from list --</option>
                             {paddySupervisors.map(s => (
-                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -2412,7 +2424,7 @@ const SampleEntryPage: React.FC<{
                           >
                             <option value="">-- Select Supervisor -- *</option>
                             {paddySupervisors.map(s => (
-                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -3276,7 +3288,7 @@ const SampleEntryPage: React.FC<{
                           >
                             <option value="">-- Select Supervisor -- *</option>
                             {paddySupervisors.map(s => (
-                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -3344,7 +3356,7 @@ const SampleEntryPage: React.FC<{
                           >
                             <option value="">-- Select from list --</option>
                             {paddySupervisors.map(s => (
-                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={toTitleCase(s.username)}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -3451,7 +3463,7 @@ const SampleEntryPage: React.FC<{
                 </div>
                 <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '9px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase' }}>Collected By</div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toTitleCase(detailEntry.sampleCollectedBy || '-')}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getCollectorLabel(detailEntry.sampleCollectedBy || '-')}</div>
                 </div>
               </div>
 

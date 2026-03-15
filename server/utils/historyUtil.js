@@ -7,7 +7,7 @@ const hasAlphaOrPositive = (value) => {
   if (!raw) return false;
   if (/[a-zA-Z]/.test(raw)) return true;
   const num = parseFloat(raw);
-  return Number.isFinite(num) && num > 0;
+  return Number.isFinite(num);
 };
 
 const hasQualityData = (qp) => {

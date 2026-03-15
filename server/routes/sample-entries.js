@@ -104,7 +104,7 @@ const hasAlphaOrPositive = (value) => {
   if (!raw) return false;
   if (/[a-zA-Z]/.test(raw)) return true;
   const num = parseFloat(raw);
-  return Number.isFinite(num) && num > 0;
+  return Number.isFinite(num);
 };
 
 const normalizeGramsReport = (value, fallback = '10gms') => {
@@ -212,13 +212,18 @@ router.get('/paddy-supervisors', authenticateToken, async (req, res) => {
     }
     const supervisors = await User.findAll({
       where: whereClause,
-      attributes: ['id', 'username', 'staffType'],
+      attributes: ['id', 'username', 'fullName', 'staffType'],
       order: [['username', 'ASC']]
     });
 
     res.json({
       success: true,
-      users: supervisors.map(u => ({ id: u.id, username: u.username, staffType: u.staffType || null }))
+      users: supervisors.map(u => ({
+        id: u.id,
+        username: u.username,
+        fullName: u.fullName || null,
+        staffType: u.staffType || null
+      }))
     });
   } catch (error) {
     console.error('Get paddy supervisors error:', error);
@@ -1016,12 +1021,32 @@ router.post('/:id/quality-parameters', authenticateToken, async (req, res) => {
           return res.status(400).json({ error: 'Sample Reported By is required' });
         }
 
-        const hasMoisture = parseFloatSafe(req.body.moisture) > 0;
-        const hasGrains = parseIntSafe(req.body.grainsCount) > 0;
-        const hasCutting1 = parseFloatSafe(req.body.cutting1) > 0;
-        const hasCutting2 = parseFloatSafe(req.body.cutting2) > 0;
-        const hasBend1 = parseFloatSafe(req.body.bend1) > 0;
-        const hasBend2 = parseFloatSafe(req.body.bend2) > 0;
+        const isProvided = (value) => normalizeRaw(value) !== null;
+        const hasMoisture = isProvided(req.body.moisture);
+        const hasGrains = isProvided(req.body.grainsCount);
+        const hasCutting1 = isProvided(req.body.cutting1);
+        const hasCutting2 = isProvided(req.body.cutting2);
+        const hasBend1 = isProvided(req.body.bend1);
+        const hasBend2 = isProvided(req.body.bend2);
+
+        if (hasMoisture && !Number.isFinite(parseFloat(req.body.moisture))) {
+          return res.status(400).json({ error: 'Moisture must be a valid number' });
+        }
+        if (hasGrains && !Number.isFinite(parseFloat(req.body.grainsCount))) {
+          return res.status(400).json({ error: 'Grains Count must be a valid number' });
+        }
+        if (hasCutting1 && !Number.isFinite(parseFloat(req.body.cutting1))) {
+          return res.status(400).json({ error: 'Cutting must be a valid number' });
+        }
+        if (hasCutting2 && !Number.isFinite(parseFloat(req.body.cutting2))) {
+          return res.status(400).json({ error: 'Cutting must be a valid number' });
+        }
+        if (hasBend1 && !Number.isFinite(parseFloat(req.body.bend1))) {
+          return res.status(400).json({ error: 'Bend must be a valid number' });
+        }
+        if (hasBend2 && !Number.isFinite(parseFloat(req.body.bend2))) {
+          return res.status(400).json({ error: 'Bend must be a valid number' });
+        }
         const hasMix = hasAlphaOrPositive(req.body.mix);
         const hasKandu = hasAlphaOrPositive(req.body.kandu);
         const hasOil = hasAlphaOrPositive(req.body.oil);
