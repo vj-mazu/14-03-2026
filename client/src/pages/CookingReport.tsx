@@ -45,9 +45,18 @@ interface SampleEntry {
 interface SupervisorUser {
   id: number;
   username: string;
+  fullName?: string | null;
 }
 
 const toTitleCase = (str: string) => str ? str.replace(/\b\w/g, c => c.toUpperCase()) : '';
+const getCollectorLabel = (value: string | null | undefined, supervisors: SupervisorUser[]) => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '-';
+  if (raw.toLowerCase() === 'broker office sample') return 'Broker Office Sample';
+  const match = supervisors.find((sup) => String(sup.username || '').trim().toLowerCase() === raw.toLowerCase());
+  if (match?.fullName) return toTitleCase(match.fullName);
+  return toTitleCase(raw);
+};
 const toSentenceCase = (value: string) => {
   const normalized = String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
   if (!normalized) return '';
@@ -431,7 +440,7 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
               <div><strong>Pkg:</strong> {entry.packaging || '-'}</div>
               <div><strong>Variety:</strong> {toTitleCase(entry.variety) || '-'}</div>
               <div><strong>Location:</strong> {toTitleCase(entry.location) || '-'}</div>
-              <div><strong>Collected By:</strong> {toTitleCase(entry.sampleCollectedBy || entry.creator?.username || '-') || '-'}</div>
+              <div><strong>Collected By:</strong> {getCollectorLabel(entry.sampleCollectedBy || entry.creator?.username || '-', supervisors)}</div>
             </div>
             {qp && (
               <div style={{ marginTop: '10px' }}>
@@ -1499,7 +1508,7 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
                           >
                             <option value="">-- Select from list --</option>
                             {supervisors.map(s => (
-                              <option key={s.id} value={s.username}>{toTitleCase(s.username)}</option>
+                              <option key={s.id} value={s.username}>{toTitleCase(s.fullName || s.username)}</option>
                             ))}
                           </select>
                         )}
@@ -1733,7 +1742,7 @@ const CookingReport: React.FC<CookingReportProps> = ({ entryType, excludeEntryTy
                 </div>
                 <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collected By</div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toTitleCase(detailEntry.sampleCollectedBy || '-')}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getCollectorLabel(detailEntry.sampleCollectedBy || '-', supervisors)}</div>
                 </div>
               </div>
 

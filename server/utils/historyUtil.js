@@ -10,14 +10,28 @@ const hasAlphaOrPositive = (value) => {
   return Number.isFinite(num);
 };
 
+const isProvidedNumeric = (rawVal, valueVal) => {
+  const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+  if (raw !== '') return true;
+  const num = Number(valueVal);
+  return Number.isFinite(num) && num > 0;
+};
+const isProvidedAlpha = (rawVal, valueVal) => {
+  const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+  if (raw !== '') return true;
+  return hasAlphaOrPositive(valueVal);
+};
+
 const hasQualityData = (qp) => {
   if (!qp) return false;
-  const moisture = parseFloat(qp.moisture || 0);
-  const grains = parseFloat(qp.grainsCount || 0);
-  const cutting = parseFloat(qp.cutting1 || 0);
-  const bend = parseFloat(qp.bend1 || 0);
-  const mix = hasAlphaOrPositive(qp.mix) || hasAlphaOrPositive(qp.mixS) || hasAlphaOrPositive(qp.mixL);
-  return moisture > 0 && (grains > 0 || cutting > 0 || bend > 0 || mix);
+  const moisture = isProvidedNumeric(qp.moistureRaw, qp.moisture);
+  const grains = isProvidedNumeric(qp.grainsCountRaw, qp.grainsCount);
+  const cutting = isProvidedNumeric(qp.cutting1Raw, qp.cutting1);
+  const bend = isProvidedNumeric(qp.bend1Raw, qp.bend1);
+  const mix = isProvidedAlpha(qp.mixRaw, qp.mix)
+    || isProvidedAlpha(qp.mixSRaw, qp.mixS)
+    || isProvidedAlpha(qp.mixLRaw, qp.mixL);
+  return moisture && (grains || cutting || bend || mix);
 };
 
 const hasCookingData = (cr) => {

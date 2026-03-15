@@ -44,6 +44,12 @@ interface SampleEntry {
   };
 }
 
+interface SupervisorUser {
+  id: number;
+  username: string;
+  fullName?: string | null;
+}
+
 const toTitleCase = (str: string) => str ? str.replace(/\b\w/g, c => c.toUpperCase()) : '';
 const toSentenceCase = (value: string) => {
   const normalized = String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -69,6 +75,15 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
   const decisionLocksRef = useRef<Set<string>>(new Set());
   const [detailEntry, setDetailEntry] = useState<SampleEntry | null>(null);
   const [remarksModalData, setRemarksModalData] = useState<{ isOpen: boolean, text: string }>({ isOpen: false, text: '' });
+  const [supervisors, setSupervisors] = useState<SupervisorUser[]>([]);
+  const getCollectorLabel = (value?: string | null) => {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return '-';
+    if (raw.toLowerCase() === 'broker office sample') return 'Broker Office Sample';
+    const match = supervisors.find((sup) => String(sup.username || '').trim().toLowerCase() === raw.toLowerCase());
+    if (match?.fullName) return toTitleCase(match.fullName);
+    return toTitleCase(raw);
+  };
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -88,6 +103,23 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
   useEffect(() => {
     loadEntries();
   }, [page]);
+
+  useEffect(() => {
+    const loadSupervisors = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`${API_URL}/sample-entries/paddy-supervisors`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = response.data as any;
+        const users = Array.isArray(data) ? data : (data.users || []);
+        setSupervisors(users.filter((u: any) => u && u.username));
+      } catch (error) {
+        console.error('Error loading supervisors:', error);
+      }
+    };
+    loadSupervisors();
+  }, []);
 
   const loadEntries = async (fFrom?: string, fTo?: string, fBroker?: string) => {
     try {
@@ -408,7 +440,7 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{toTitleCase(entry.location) || '-'}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{toTitleCase(entry.variety)}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {entry.sampleCollectedBy ? toTitleCase(entry.sampleCollectedBy) : (entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-'}
+                                      {entry.sampleCollectedBy ? getCollectorLabel(entry.sampleCollectedBy) : (entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-'}
                                     </td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle', fontSize: '12px', color: '#000' }}>{qp?.grainsCount ? `(${fmtWhole(qp.grainsCount)})` : '-'}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle', fontSize: '11px', fontWeight: '600' }}>
@@ -490,7 +522,7 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{toTitleCase(entry.location) || '-'}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{toTitleCase(entry.variety)}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'left', verticalAlign: 'middle', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {entry.sampleCollectedBy ? toTitleCase(entry.sampleCollectedBy) : (entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-'}
+                                      {entry.sampleCollectedBy ? getCollectorLabel(entry.sampleCollectedBy) : (entry as any).creator?.username ? toTitleCase((entry as any).creator.username) : '-'}
                                     </td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle', fontSize: '12px', color: '#000' }}>{qp?.grainsCount ? `(${fmtWhole(qp.grainsCount)})` : fallback}</td>
                                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle', fontSize: '11px', fontWeight: '600' }}>
@@ -685,7 +717,7 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
                   {[
                     ['Party Name', toTitleCase(detailEntry.partyName) || (detailEntry.entryType === 'DIRECT_LOADED_VEHICLE' ? detailEntry.lorryNumber?.toUpperCase() : '')],
                     ['Paddy Location', detailEntry.location],
-                    ['Sample Collected By', toTitleCase(detailEntry.sampleCollectedBy || '-')],
+                    ['Sample Collected By', getCollectorLabel(detailEntry.sampleCollectedBy || '-')],
                   ].map(([label, value], i) => (
                     <div key={i} style={{ background: '#f8f9fa', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e0e0e0' }}>
                       <div style={{ fontSize: '10px', color: '#666', marginBottom: '2px', fontWeight: '600' }}>{label}</div>

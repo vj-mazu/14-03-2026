@@ -167,6 +167,17 @@ const hasAlphaOrPositiveValue = (val: any) => {
   const num = parseFloat(raw);
   return Number.isFinite(num);
 };
+const isProvidedNumeric = (rawVal: any, valueVal: any) => {
+  const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+  if (raw !== '') return true;
+  const num = Number(valueVal);
+  return Number.isFinite(num) && num > 0;
+};
+const isProvidedAlpha = (rawVal: any, valueVal: any) => {
+  const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+  if (raw !== '') return true;
+  return hasAlphaOrPositiveValue(valueVal);
+};
 
 const getResampleRoundLabel = (attempts: number) => {
     if (attempts <= 1) return '';
@@ -186,12 +197,18 @@ type PricingDetailState = {
     entry: SampleEntry;
     mode: 'offer' | 'final';
 };
+type SupervisorUser = {
+    id: number;
+    username: string;
+    fullName?: string | null;
+};
 
 const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeEntryType }) => {
     const isRiceBook = entryType === 'RICE_SAMPLE';
     const tableMinWidth = isRiceBook ? '100%' : '1500px';
     const [entries, setEntries] = useState<SampleEntry[]>([]);
     const [loading, setLoading] = useState(false);
+    const [supervisors, setSupervisors] = useState<SupervisorUser[]>([]);
 
     // Pagination
     const [page, setPage] = useState(1);
@@ -211,6 +228,14 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
     const [pricingDetail, setPricingDetail] = useState<PricingDetailState | null>(null);
     const [remarksPopup, setRemarksPopup] = useState<{ isOpen: boolean; text: string }>({ isOpen: false, text: '' });
     const [recheckModal, setRecheckModal] = useState<{ isOpen: boolean; entry: SampleEntry | null }>({ isOpen: false, entry: null });
+    const getCollectorLabel = (value?: string | null) => {
+        const raw = typeof value === 'string' ? value.trim() : '';
+        if (!raw) return '-';
+        if (raw.toLowerCase() === 'broker office sample') return 'Broker Office Sample';
+        const match = supervisors.find((sup) => String(sup.username || '').trim().toLowerCase() === raw.toLowerCase());
+        if (match?.fullName) return toTitleCase(match.fullName);
+        return toTitleCase(raw);
+    };
 
     const handleRecheck = async (type: string) => {
         if (!recheckModal.entry) return;
@@ -228,6 +253,23 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             toast.error(msg);
         }
     };
+
+    useEffect(() => {
+        const loadSupervisors = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await axios.get(`${API_URL}/sample-entries/paddy-supervisors`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = response.data as any;
+                const users = Array.isArray(data) ? data : (data.users || []);
+                setSupervisors(users.filter((u: any) => u && u.username));
+            } catch (error) {
+                console.error('Error loading supervisors:', error);
+            }
+        };
+        loadSupervisors();
+    }, []);
 
     useEffect(() => {
         loadEntries();
@@ -288,11 +330,13 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         if (isRiceBook) {
             return entries.filter((entry) => {
                 const qp = entry.qualityParameters;
-                const hasQuality = qp && qp.moisture != null && (
-                    (qp.cutting1 && Number(qp.cutting1) !== 0) ||
-                    (qp.bend1 && Number(qp.bend1) !== 0) ||
-                    (qp.mix && String(qp.mix) !== '0') ||
-                    (qp.sk && String(qp.sk) !== '0')
+                const hasQuality = qp && isProvidedNumeric((qp as any).moistureRaw, qp.moisture) && (
+                    isProvidedNumeric((qp as any).cutting1Raw, qp.cutting1)
+                    || isProvidedNumeric((qp as any).bend1Raw, qp.bend1)
+                    || isProvidedAlpha((qp as any).mixRaw, qp.mix)
+                    || isProvidedAlpha((qp as any).mixSRaw, qp.mixS)
+                    || isProvidedAlpha((qp as any).mixLRaw, qp.mixL)
+                    || isProvidedAlpha((qp as any).skRaw, qp.sk)
                 );
                 return !!hasQuality;
             });
@@ -302,18 +346,17 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             const qp = entry.qualityParameters as any;
             const hasQualityRecord = !!(qp && (qp.reportedBy || qp.id));
             if (!hasQualityRecord) return true; // Pending entries should show
-            const isPositiveNumber = (val: any) => Number.isFinite(Number(val)) && Number(val) > 0;
-            const hasMoisture = qp && isPositiveNumber(qp.moisture);
-            const hasGrains = qp && isPositiveNumber(qp.grainsCount);
+            const hasMoisture = qp && isProvidedNumeric(qp.moistureRaw, qp.moisture);
+            const hasGrains = qp && isProvidedNumeric(qp.grainsCountRaw, qp.grainsCount);
             if (!hasMoisture || !hasGrains) return true; // Pending (partial) shows
-            const hasCutting1 = qp && isPositiveNumber(qp.cutting1);
-            const hasCutting2 = qp && isPositiveNumber(qp.cutting2);
-            const hasBend1 = qp && isPositiveNumber(qp.bend1);
-            const hasBend2 = qp && isPositiveNumber(qp.bend2);
-            const hasMix = qp && (String(qp.mix || '').trim() !== '' && String(qp.mix) !== '0');
-            const hasKandu = qp && (String(qp.kandu || '').trim() !== '' && String(qp.kandu) !== '0');
-            const hasOil = qp && (String(qp.oil || '').trim() !== '' && String(qp.oil) !== '0');
-            const hasSk = qp && (String(qp.sk || '').trim() !== '' && String(qp.sk) !== '0');
+            const hasCutting1 = qp && isProvidedNumeric(qp.cutting1Raw, qp.cutting1);
+            const hasCutting2 = qp && isProvidedNumeric(qp.cutting2Raw, qp.cutting2);
+            const hasBend1 = qp && isProvidedNumeric(qp.bend1Raw, qp.bend1);
+            const hasBend2 = qp && isProvidedNumeric(qp.bend2Raw, qp.bend2);
+            const hasMix = qp && isProvidedAlpha(qp.mixRaw, qp.mix);
+            const hasKandu = qp && isProvidedAlpha(qp.kanduRaw, qp.kandu);
+            const hasOil = qp && isProvidedAlpha(qp.oilRaw, qp.oil);
+            const hasSk = qp && isProvidedAlpha(qp.skRaw, qp.sk);
             const hasAnyDetail = hasCutting1 || hasCutting2 || hasBend1 || hasBend2 || hasMix || hasKandu || hasOil || hasSk;
             if (!hasAnyDetail) return true; // 100g completed
             const isFullQuality = hasCutting1 && hasCutting2 && hasBend1 && hasBend2 && hasMix && hasKandu && hasOil && hasSk;
@@ -558,13 +601,13 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 // Check if only 100-Gms quality data — show "100-Gms Passed"
                 const qp = entry.qualityParameters;
                 const hasFullQuality = qp && (
-                    (qp.cutting1 && Number(qp.cutting1) !== 0)
-                    || (qp.bend1 && Number(qp.bend1) !== 0)
-                    || hasAlphaOrPositiveValue(qp.mix)
-                    || hasAlphaOrPositiveValue(qp.mixS)
-                    || hasAlphaOrPositiveValue(qp.mixL)
+                    isProvidedNumeric((qp as any).cutting1Raw, qp.cutting1)
+                    || isProvidedNumeric((qp as any).bend1Raw, qp.bend1)
+                    || isProvidedAlpha((qp as any).mixRaw, qp.mix)
+                    || isProvidedAlpha((qp as any).mixSRaw, qp.mixS)
+                    || isProvidedAlpha((qp as any).mixLRaw, qp.mixL)
                 );
-                if (qp && qp.moisture != null && !hasFullQuality) { bg = '#e8f5e9'; color = '#2e7d32'; label = '100-Gms/Pass'; }
+                if (qp && isProvidedNumeric((qp as any).moistureRaw, qp.moisture) && !hasFullQuality) { bg = '#e8f5e9'; color = '#2e7d32'; label = '100-Gms/Pass'; }
                 else { bg = '#e8f5e9'; color = '#2e7d32'; label = 'Pass'; }
             }
             else if (result === 'fail') { bg = '#ffcdd2'; color = '#b71c1c'; label = 'Fail'; }
@@ -637,12 +680,12 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
 
         const getQualityType = (attempt: any) => {
             if (!attempt) return 'Pending';
-            const hasFullQuality = (attempt.cutting1 && Number(attempt.cutting1) !== 0)
-                || (attempt.bend1 && Number(attempt.bend1) !== 0)
-                || hasAlphaOrPositiveValue(attempt.mix)
-                || hasAlphaOrPositiveValue(attempt.mixS)
-                || hasAlphaOrPositiveValue(attempt.mixL);
-            const has100g = attempt.grainsCount != null && Number(attempt.grainsCount) !== 0;
+            const hasFullQuality = isProvidedNumeric((attempt as any).cutting1Raw, attempt.cutting1)
+                || isProvidedNumeric((attempt as any).bend1Raw, attempt.bend1)
+                || isProvidedAlpha((attempt as any).mixRaw, attempt.mix)
+                || isProvidedAlpha((attempt as any).mixSRaw, attempt.mixS)
+                || isProvidedAlpha((attempt as any).mixLRaw, attempt.mixL);
+            const has100g = isProvidedNumeric((attempt as any).grainsCountRaw, attempt.grainsCount);
             if (hasFullQuality) return 'Done';
             if (has100g) return '100-Gms';
             return 'Pending';
@@ -650,12 +693,12 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
 
         const getLatestStatus = (attempt: any) => {
             if (!attempt) return 'Pending';
-            const hasFullQuality = (attempt.cutting1 && Number(attempt.cutting1) !== 0)
-                || (attempt.bend1 && Number(attempt.bend1) !== 0)
-                || hasAlphaOrPositiveValue(attempt.mix)
-                || hasAlphaOrPositiveValue(attempt.mixS)
-                || hasAlphaOrPositiveValue(attempt.mixL);
-            const has100g = attempt.grainsCount != null && Number(attempt.grainsCount) !== 0;
+            const hasFullQuality = isProvidedNumeric((attempt as any).cutting1Raw, attempt.cutting1)
+                || isProvidedNumeric((attempt as any).bend1Raw, attempt.bend1)
+                || isProvidedAlpha((attempt as any).mixRaw, attempt.mix)
+                || isProvidedAlpha((attempt as any).mixSRaw, attempt.mixS)
+                || isProvidedAlpha((attempt as any).mixLRaw, attempt.mixL);
+            const has100g = isProvidedNumeric((attempt as any).grainsCountRaw, attempt.grainsCount);
             const isPassDecision = d === 'PASS_WITH_COOKING'
                 || d === 'PASS_WITHOUT_COOKING'
                 || d === 'SOLDOUT';
@@ -995,7 +1038,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                                                 </td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'left', whiteSpace: 'nowrap' }}>{toTitleCase(entry.variety)}</td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '13px', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                                                                    {entry.sampleCollectedBy ? (<span style={{ color: '#333', fontSize: '13px', fontWeight: '600' }}>{toTitleCase(entry.sampleCollectedBy)}</span>) : entry.creator?.username ? (<span style={{ fontWeight: '600', color: '#1565c0', fontSize: '13px' }}>{toTitleCase(entry.creator.username)}</span>) : '-'}
+                                                                    {entry.sampleCollectedBy ? (<span style={{ color: '#333', fontSize: '13px', fontWeight: '600' }}>{getCollectorLabel(entry.sampleCollectedBy)}</span>) : entry.creator?.username ? (<span style={{ fontWeight: '600', color: '#1565c0', fontSize: '13px' }}>{toTitleCase(entry.creator.username)}</span>) : '-'}
                                                                 </td>
                                                                 <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'left', whiteSpace: 'nowrap' }}>{qualityBadge(entry)}</td>
                                                                 <td style={{
@@ -1152,7 +1195,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                                     </div>
                                     <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                                         <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collected By</div>
-                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toTitleCase(detailEntry.sampleCollectedBy || '-')}</div>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getCollectorLabel(detailEntry.sampleCollectedBy || '-')}</div>
                                     </div>
                                 </div>
 

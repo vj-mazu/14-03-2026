@@ -838,20 +838,18 @@ const SampleEntryPage: React.FC<{
           uploadFile: null
         });
         setHasExistingQualityData(true);
-          const hasAlphaOrPositive = (val: any) => {
-            if (val === null || val === undefined || val === '') return false;
-            const raw = String(val).trim();
-            if (!raw) return false;
-            if (/[a-zA-Z]/.test(raw)) return true;
-            const num = parseFloat(raw);
+          const hasProvided = (rawVal: any, valueVal: any) => {
+            const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+            if (raw !== '') return true;
+            if (valueVal === null || valueVal === undefined || valueVal === '') return false;
+            const num = parseFloat(valueVal);
             return Number.isFinite(num);
           };
-          if (hasAlphaOrPositive(qp.mixS)) setSmixEnabled(true);
-          if (hasAlphaOrPositive(qp.mixL)) setLmixEnabled(true);
-        if (qp.paddyWb && parseFloat(qp.paddyWb) > 0) setPaddyWbEnabled(true);
-        if (qp.wbR && parseFloat(qp.wbR) > 0) setWbEnabled(true);
-        if (qp.wbBk && parseFloat(qp.wbBk) > 0) setWbEnabled(true);
-        if (qp.dryMoisture && parseFloat(qp.dryMoisture) > 0) setDryMoistureEnabled(true);
+          if (hasProvided(qp.mixSRaw, qp.mixS)) setSmixEnabled(true);
+          if (hasProvided(qp.mixLRaw, qp.mixL)) setLmixEnabled(true);
+        if (hasProvided(qp.paddyWbRaw, qp.paddyWb)) setPaddyWbEnabled(true);
+        if (hasProvided(qp.wbRRaw, qp.wbR) || hasProvided(qp.wbBkRaw, qp.wbBk)) setWbEnabled(true);
+        if (hasProvided(qp.dryMoistureRaw, qp.dryMoisture)) setDryMoistureEnabled(true);
       } else {
         setQualityRecordExists(false);
         resetQualityForm();
@@ -866,35 +864,48 @@ const SampleEntryPage: React.FC<{
   const handleSubmitQualityParametersWithConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    if (!qualityData.moisture) { showNotification('Moisture is required', 'error'); return; }
+    const isMissing = (val: any) => String(val ?? '').trim() === '';
+    const isProvided = (val: any) => !isMissing(val);
+    if (isMissing(qualityData.moisture)) { showNotification('Moisture is required', 'error'); return; }
 
     const reportedByValue = qualityData.reportedBy || '';
     if (!reportedByValue || reportedByValue.trim() === '') { showNotification('Sample Reported By is required', 'error'); return; }
 
     if (selectedEntry?.entryType === 'RICE_SAMPLE') {
       // All fields mandatory for Rice except toggles
-      if (!qualityData.grainsCount) { showNotification('Grains Count is required', 'error'); return; }
-      if (!qualityData.mix) { showNotification('Broken is required', 'error'); return; }
-      if (!qualityData.cutting1) { showNotification('Rice is required', 'error'); return; }
-      if (!qualityData.bend1) { showNotification('Bend is required', 'error'); return; }
-      if (!qualityData.sk) { showNotification('Mix is required', 'error'); return; }
-      if (!qualityData.kandu) { showNotification('Kandu is required', 'error'); return; }
-      if (!qualityData.oil) { showNotification('Oil is required', 'error'); return; }
-      if (!qualityData.gramsReport) { showNotification('Grams Report is required', 'error'); return; }
+      if (isMissing(qualityData.grainsCount)) { showNotification('Grains Count is required', 'error'); return; }
+      if (isMissing(qualityData.mix)) { showNotification('Broken is required', 'error'); return; }
+      if (isMissing(qualityData.cutting1)) { showNotification('Rice is required', 'error'); return; }
+      if (isMissing(qualityData.bend1)) { showNotification('Bend is required', 'error'); return; }
+      if (isMissing(qualityData.sk)) { showNotification('Mix is required', 'error'); return; }
+      if (isMissing(qualityData.kandu)) { showNotification('Kandu is required', 'error'); return; }
+      if (isMissing(qualityData.oil)) { showNotification('Oil is required', 'error'); return; }
+      if (isMissing(qualityData.gramsReport)) { showNotification('Grams Report is required', 'error'); return; }
     } else {
       // 100g save = moisture + grainsCount only for Paddy
-      if (!qualityData.grainsCount) { showNotification('Grains Count is required', 'error'); return; }
-      const has100g = !!(qualityData.moisture && qualityData.grainsCount);
-      const qualityFields = !!(qualityData.cutting1 || qualityData.cutting2 || qualityData.bend1 || qualityData.bend2 || qualityData.mix || qualityData.mixS || qualityData.mixL || qualityData.kandu || qualityData.oil || qualityData.sk);
-      const allQualityFilled = !!(qualityData.cutting1 && qualityData.cutting2 && qualityData.bend1 && qualityData.bend2 && qualityData.mix && qualityData.kandu && qualityData.oil && qualityData.sk && qualityData.grainsCount);
+      if (isMissing(qualityData.grainsCount)) { showNotification('Grains Count is required', 'error'); return; }
+      const has100g = isProvided(qualityData.moisture) && isProvided(qualityData.grainsCount);
+      const qualityFields = (
+        isProvided(qualityData.cutting1) || isProvided(qualityData.cutting2)
+        || isProvided(qualityData.bend1) || isProvided(qualityData.bend2)
+        || isProvided(qualityData.mix) || isProvided(qualityData.mixS) || isProvided(qualityData.mixL)
+        || isProvided(qualityData.kandu) || isProvided(qualityData.oil) || isProvided(qualityData.sk)
+      );
+      const allQualityFilled = (
+        isProvided(qualityData.cutting1) && isProvided(qualityData.cutting2)
+        && isProvided(qualityData.bend1) && isProvided(qualityData.bend2)
+        && isProvided(qualityData.mix) && isProvided(qualityData.kandu)
+        && isProvided(qualityData.oil) && isProvided(qualityData.sk)
+        && isProvided(qualityData.grainsCount)
+      );
       if (qualityFields && !allQualityFilled) {
-        if (!qualityData.cutting1) { showNotification('Cutting is required', 'error'); return; }
-        if (!qualityData.bend1) { showNotification('Bend is required', 'error'); return; }
-        if (!qualityData.mix) { showNotification('Mix is required', 'error'); return; }
-        if (!qualityData.kandu) { showNotification('Kandu is required', 'error'); return; }
-        if (!qualityData.oil) { showNotification('Oil is required', 'error'); return; }
-        if (!qualityData.sk) { showNotification('SK is required', 'error'); return; }
-        if (!qualityData.grainsCount) { showNotification('Grains Count is required', 'error'); return; }
+        if (isMissing(qualityData.cutting1)) { showNotification('Cutting is required', 'error'); return; }
+        if (isMissing(qualityData.bend1)) { showNotification('Bend is required', 'error'); return; }
+        if (isMissing(qualityData.mix)) { showNotification('Mix is required', 'error'); return; }
+        if (isMissing(qualityData.kandu)) { showNotification('Kandu is required', 'error'); return; }
+        if (isMissing(qualityData.oil)) { showNotification('Oil is required', 'error'); return; }
+        if (isMissing(qualityData.sk)) { showNotification('SK is required', 'error'); return; }
+        if (isMissing(qualityData.grainsCount)) { showNotification('Grains Count is required', 'error'); return; }
       }
     }
     setShowQualitySaveConfirm(true);
@@ -909,9 +920,20 @@ const SampleEntryPage: React.FC<{
 
     // 100g = ONLY moisture (and optionally dry moisture) entered, no other quality fields
     // Quality Complete = moisture + all other required fields filled
-    const allQualityFieldsFilled = !!(qualityData.moisture && qualityData.cutting1 && qualityData.cutting2 && qualityData.bend1 && qualityData.bend2 && qualityData.mix && qualityData.kandu && qualityData.oil && qualityData.sk && qualityData.grainsCount);
-    const has100gOnly = !!(qualityData.moisture && qualityData.grainsCount)
-      && !(qualityData.cutting1 || qualityData.cutting2 || qualityData.bend1 || qualityData.bend2 || qualityData.mix || qualityData.mixS || qualityData.mixL || qualityData.kandu || qualityData.oil || qualityData.sk);
+    const isProvided = (val: any) => String(val ?? '').trim() !== '';
+    const allQualityFieldsFilled = (
+      isProvided(qualityData.moisture)
+      && isProvided(qualityData.cutting1) && isProvided(qualityData.cutting2)
+      && isProvided(qualityData.bend1) && isProvided(qualityData.bend2)
+      && isProvided(qualityData.mix) && isProvided(qualityData.kandu)
+      && isProvided(qualityData.oil) && isProvided(qualityData.sk)
+      && isProvided(qualityData.grainsCount)
+    );
+    const has100gOnly = (isProvided(qualityData.moisture) && isProvided(qualityData.grainsCount))
+      && !(isProvided(qualityData.cutting1) || isProvided(qualityData.cutting2)
+        || isProvided(qualityData.bend1) || isProvided(qualityData.bend2)
+        || isProvided(qualityData.mix) || isProvided(qualityData.mixS) || isProvided(qualityData.mixL)
+        || isProvided(qualityData.kandu) || isProvided(qualityData.oil) || isProvided(qualityData.sk));
     const is100GramsSave = selectedEntry.entryType === 'RICE_SAMPLE' ? false : has100gOnly;
 
     try {
@@ -1434,12 +1456,28 @@ const SampleEntryPage: React.FC<{
                             const isCookingRecheckPending = (entry as any).cookingPending === true
                               || ((entry as any).cookingPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType === 'cooking');
                             const isRecheckEntry = isQualityRecheckPending || isCookingRecheckPending;
-                            const baseHasQuality = qp && Number(qp.moisture || 0) > 0 && (
-                               (qp.cutting1 && Number(qp.cutting1) !== 0) ||
-                               (qp.bend1 && Number(qp.bend1) !== 0) ||
-                               hasAlphaOrPositiveValue(qp.mix)
+                            const isProvidedNumeric = (rawVal: any, valueVal: any) => {
+                              const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+                              if (raw !== '') return true;
+                              const num = Number(valueVal);
+                              return Number.isFinite(num) && num > 0;
+                            };
+                            const isProvidedAlpha = (rawVal: any, valueVal: any) => {
+                              const raw = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+                              if (raw !== '') return true;
+                              return hasAlphaOrPositiveValue(valueVal);
+                            };
+                            const baseHasQuality = qp && isProvidedNumeric(qp.moistureRaw, qp.moisture) && (
+                               isProvidedNumeric(qp.cutting1Raw, qp.cutting1) ||
+                               isProvidedNumeric(qp.bend1Raw, qp.bend1) ||
+                               isProvidedAlpha(qp.mixRaw, qp.mix) ||
+                               isProvidedAlpha(qp.mixSRaw, qp.mixS) ||
+                               isProvidedAlpha(qp.mixLRaw, qp.mixL)
                              );
-                             const baseHas100Grams = entry.entryType !== 'RICE_SAMPLE' && qp && Number(qp.moisture || 0) > 0 && Number(qp.grainsCount || 0) > 0 && !baseHasQuality;
+                             const baseHas100Grams = entry.entryType !== 'RICE_SAMPLE' && qp
+                              && isProvidedNumeric(qp.moistureRaw, qp.moisture)
+                              && isProvidedNumeric(qp.grainsCountRaw, qp.grainsCount)
+                              && !baseHasQuality;
                             const hasQuality = isQualityRecheckPending ? false : baseHasQuality;
                             const has100Grams = isQualityRecheckPending ? false : baseHas100Grams;
                             const showResampleQualityCompleted = isPaddyResampleWorkflow && resampleQualitySaved && hasQuality;
