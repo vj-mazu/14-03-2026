@@ -354,6 +354,7 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const d = entry.lotSelectionDecision;
         const isCookingRecheckPending = (entry as any).cookingPending === true
             || ((entry as any).cookingPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType === 'cooking');
+        const isQualityOnlyRecheck = (entry as any).qualityPending === true && !isCookingRecheckPending;
         const history = Array.isArray(cr?.history) ? cr!.history : [];
         const latestEvent = history.length > 0 ? history[history.length - 1] : null;
         const doneByFromHistory = [...history].reverse().find((h) => h?.cookingDoneBy)?.cookingDoneBy || '';
@@ -376,7 +377,8 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             isResampleFlow
             && (approvals.length > 1 || cookingAttempts > 1);
 
-        if (isCookingRecheckPending && !cr?.status) {
+        // Only show cooking recheck badge when cooking is actually pending (not for quality-only recheck)
+        if (isCookingRecheckPending && !isQualityOnlyRecheck) {
             return <span style={{ background: '#e3f2fd', color: '#1565c0', padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Recheck</span>;
         }
 
@@ -539,7 +541,14 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         let color = '#e65100';
         // Resample in-progress only while current resample cycle is not yet passed/finalized
         if (d === 'SOLDOUT') { bg = '#800000'; color = '#ffffff'; label = 'Sold Out'; }
-        else if (isRecheckRequested) { bg = '#e3f2fd'; color = '#1565c0'; label = 'Rechecking'; }
+        else if (isRecheckRequested) {
+            bg = '#e3f2fd'; color = '#1565c0';
+            // Show specific recheck type
+            if (isQualityRecheckPending && isCookingRecheckPending) { label = 'Both Recheck'; }
+            else if (isQualityRecheckPending) { label = 'Quality Recheck'; }
+            else if (isCookingRecheckPending) { label = 'Cooking Recheck'; }
+            else { label = 'Rechecking'; }
+        }
         else if (d === 'FAIL') { bg = '#ffcdd2'; color = '#b71c1c'; label = 'Fail'; }
         else if (s === 'FAILED') { bg = '#ffcdd2'; color = '#b71c1c'; label = 'Fail'; }
         else if (isResampleInProgress) { bg = '#fff3e0'; color = '#e65100'; label = 'Re-sample Pending'; }
@@ -616,6 +625,15 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const d = entry.lotSelectionDecision;
         const isQualityRecheckPending = (entry as any).qualityPending === true
             || ((entry as any).qualityPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType !== 'cooking');
+        const isCookingOnlyRecheck = (entry as any).cookingPending === true && !isQualityRecheckPending;
+        const previousDecision = (entry as any).recheckPreviousDecision || null;
+
+        const mapDecisionToStatus = (decision: string | null) => {
+            const key = String(decision || '').toUpperCase();
+            if (key === 'FAIL') return 'Fail';
+            if (key.startsWith('PASS') || key === 'SOLDOUT') return 'Pass';
+            return 'Pending';
+        };
 
         const getQualityType = (attempt: any) => {
             if (!attempt) return 'Pending';
@@ -641,11 +659,41 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
             const isPassDecision = d === 'PASS_WITH_COOKING'
                 || d === 'PASS_WITHOUT_COOKING'
                 || d === 'SOLDOUT';
-            if (isQualityRecheckPending) return 'Rechecking';
+            // Only show 'Rechecking' for quality-specific rechecks (not cooking-only)
+            if (isQualityRecheckPending && !isCookingOnlyRecheck) return 'Rechecking';
             if (d === 'FAIL') return 'Fail';
             if (isPassDecision) return 'Pass';
             return 'Pending';
         };
+
+        if (isQualityRecheckPending && attemptsSorted.length > 0) {
+            const prevAttempt = attemptsSorted.length > 1 ? attemptsSorted[attemptsSorted.length - 2] : attemptsSorted[0];
+            const prevType = getQualityType(prevAttempt);
+            const prevStatus = mapDecisionToStatus(previousDecision);
+            const prevTypeStyle = prevType === 'Done'
+                ? { bg: '#c8e6c9', color: '#2e7d32' }
+                : prevType === '100-Gms'
+                    ? { bg: '#fff8e1', color: '#f57f17' }
+                    : { bg: '#f5f5f5', color: '#666' };
+            const prevStatusStyle = prevStatus === 'Pass'
+                ? { bg: '#a5d6a7', color: '#1b5e20' }
+                : prevStatus === 'Fail'
+                    ? { bg: '#ffcdd2', color: '#b71c1c' }
+                    : { bg: '#ffe0b2', color: '#e65100' };
+            const recheckTypeStyle = { bg: '#e3f2fd', color: '#1565c0' };
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ background: prevTypeStyle.bg, color: prevTypeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{prevType}</span>
+                        <span style={{ background: prevStatusStyle.bg, color: prevStatusStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>{prevStatus}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ background: recheckTypeStyle.bg, color: recheckTypeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Recheck</span>
+                        <span style={{ background: recheckTypeStyle.bg, color: recheckTypeStyle.color, padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Rechecking</span>
+                    </div>
+                </div>
+            );
+        }
 
         if (attemptsCount > 1 && attemptsSorted.length > 0) {
             const lastStatus = getLatestStatus(latestAttempt);

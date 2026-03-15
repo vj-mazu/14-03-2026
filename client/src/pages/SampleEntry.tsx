@@ -782,8 +782,7 @@ const SampleEntryPage: React.FC<{
         const qp = response.data.qualityParameters;
         
         // If quality recheck is pending, always open a fresh form
-        const isQualityRecheckPending = response.data.qualityPending === true
-          || (response.data.qualityPending == null && response.data.recheckRequested === true && response.data.recheckType !== 'cooking');
+        const isQualityRecheckPending = response.data.recheckRequested === true && response.data.recheckType !== 'cooking';
         if (isQualityRecheckPending) {
           setQualityRecordExists(true); // Record exists but it's reset
           resetQualityForm();
@@ -1422,13 +1421,15 @@ const SampleEntryPage: React.FC<{
                               || ((entry as any).qualityPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType !== 'cooking');
                             const isCookingRecheckPending = (entry as any).cookingPending === true
                               || ((entry as any).cookingPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType === 'cooking');
-                            const isRecheckEntry = isQualityRecheckPending;
-                             const hasQuality = qp && Number(qp.moisture || 0) > 0 && (
+                            const isRecheckEntry = isQualityRecheckPending || isCookingRecheckPending;
+                            const baseHasQuality = qp && Number(qp.moisture || 0) > 0 && (
                                (qp.cutting1 && Number(qp.cutting1) !== 0) ||
                                (qp.bend1 && Number(qp.bend1) !== 0) ||
                                hasAlphaOrPositiveValue(qp.mix)
                              );
-                             const has100Grams = entry.entryType !== 'RICE_SAMPLE' && qp && Number(qp.moisture || 0) > 0 && Number(qp.grainsCount || 0) > 0 && !hasQuality;
+                             const baseHas100Grams = entry.entryType !== 'RICE_SAMPLE' && qp && Number(qp.moisture || 0) > 0 && Number(qp.grainsCount || 0) > 0 && !baseHasQuality;
+                            const hasQuality = isQualityRecheckPending ? false : baseHasQuality;
+                            const has100Grams = isQualityRecheckPending ? false : baseHas100Grams;
                             const showResampleQualityCompleted = isPaddyResampleWorkflow && resampleQualitySaved && hasQuality;
                             const showResample100GramsCompleted = isPaddyResampleWorkflow && resampleQualitySaved && has100Grams;
                             const showDetailedQualityStatus = false;

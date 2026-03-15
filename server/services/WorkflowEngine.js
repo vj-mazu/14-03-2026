@@ -28,15 +28,21 @@ const WORKFLOW_TRANSITIONS = [
     requiredData: ['qualityParameters']
   },
   {
+    fromStatus: 'STAFF_ENTRY',
+    toStatus: 'LOT_SELECTION',
+    allowedRoles: ['quality_supervisor', 'physical_supervisor', 'admin', 'manager', 'owner'],
+    requiredData: ['qualityParameters']
+  },
+  {
     fromStatus: 'QUALITY_CHECK',
     toStatus: 'LOT_SELECTION',
-    allowedRoles: ['admin', 'manager'],
+    allowedRoles: ['admin', 'manager', 'owner', 'quality_supervisor', 'physical_supervisor'],
     requiredData: []
   },
   {
     fromStatus: 'QUALITY_CHECK',
     toStatus: 'COOKING_REPORT',
-    allowedRoles: ['admin', 'manager'],
+    allowedRoles: ['admin', 'manager', 'owner', 'quality_supervisor', 'physical_supervisor'],
     requiredData: []
   },
   {

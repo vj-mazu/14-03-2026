@@ -59,6 +59,7 @@ export interface SampleEntry {
   recheckType?: 'quality' | 'cooking' | 'both' | null;
   qualityPending?: boolean;
   cookingPending?: boolean;
+  recheckPreviousDecision?: string | null;
   recheckAt?: string | null;
   smellHas?: boolean;
   smellType?: string;

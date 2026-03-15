@@ -28,6 +28,18 @@ const hasCookingData = (cr) => {
   return !!(status || doneBy || approvedBy);
 };
 
+const normalizeAuditMetadata = (metadata) => {
+  if (!metadata) return null;
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata);
+    } catch (error) {
+      return null;
+    }
+  }
+  return metadata;
+};
+
 const attachLoadingLotsHistories = async (rows) => {
   if (!Array.isArray(rows) || rows.length === 0) return rows;
 
@@ -142,15 +154,17 @@ const attachLoadingLotsHistories = async (rows) => {
     const target = row?.dataValues || row;
     const sampleEntryAuditLogs = sampleEntryLogsByEntryId.get(String(row?.id)) || [];
 
-    const recheckLogs = sampleEntryAuditLogs.filter((log) =>
-      log.actionType === 'WORKFLOW_TRANSITION'
-      && log.metadata
-      && log.metadata.recheckRequested === true
-    );
+    const recheckLogs = sampleEntryAuditLogs.filter((log) => {
+      if (log.actionType !== 'WORKFLOW_TRANSITION') return false;
+      const meta = normalizeAuditMetadata(log.metadata);
+      return meta?.recheckRequested === true;
+    });
     if (recheckLogs.length > 0) {
       const latestRecheck = recheckLogs[recheckLogs.length - 1];
-      const recheckType = latestRecheck.metadata?.recheckType || null;
+      const latestMeta = normalizeAuditMetadata(latestRecheck.metadata) || null;
+      const recheckType = latestMeta?.recheckType || null;
       const recheckAt = latestRecheck.createdAt || null;
+      const previousDecision = latestMeta?.previousDecision || null;
       const recheckTime = recheckAt ? new Date(recheckAt).getTime() : null;
 
       const qualityUpdatedAt = row?.qualityParameters?.updatedAt || row?.qualityParameters?.createdAt || null;
@@ -180,12 +194,14 @@ const attachLoadingLotsHistories = async (rows) => {
       target.recheckAt = isPending ? recheckAt : null;
       target.qualityPending = isPending ? qualityPending : false;
       target.cookingPending = isPending ? cookingPending : false;
+      target.recheckPreviousDecision = isPending ? previousDecision : null;
     } else {
       target.recheckRequested = false;
       target.recheckType = null;
       target.recheckAt = null;
       target.qualityPending = false;
       target.cookingPending = false;
+      target.recheckPreviousDecision = null;
     }
     
     // Extract sampleCollectedBy history
@@ -275,10 +291,10 @@ const attachLoadingLotsHistories = async (rows) => {
         attempts[targetAttemptIdx].push(qLog);
       });
       
-      attempts.forEach((group, index) => {
+      let seqAttemptNo = 1;
+      attempts.forEach((group) => {
         if (group.length > 0) {
           // Search backwards for the last non-null detail in this attempt.
-          // This handles cases where a reset occurred AFTER a transition but was logged.
           let detail = null;
           for (let k = group.length - 1; k >= 0; k--) {
             const potentialLog = group[k];
@@ -290,7 +306,7 @@ const attachLoadingLotsHistories = async (rows) => {
           }
           
           if (detail) {
-            qualityAttemptDetails.push({ attemptNo: index + 1, ...detail });
+            qualityAttemptDetails.push({ attemptNo: seqAttemptNo++, ...detail });
           }
         }
       });
@@ -300,12 +316,21 @@ const attachLoadingLotsHistories = async (rows) => {
       if (currentDetail) {
         const currentTime = new Date(row.qualityParameters.updatedAt || row.qualityParameters.createdAt).getTime();
         const currentAttemptIdx = getAttemptIndexForTime(currentTime);
-        const attemptNo = currentAttemptIdx + 1;
-        const existingIdx = qualityAttemptDetails.findIndex((item) => item.attemptNo === attemptNo);
+        
+        // Find if we already have a record matching this specific bucket
+        // If not, it's a new sequential attempt.
+        const existingIdx = qualityAttemptDetails.findIndex((item) => {
+          // Check if this item was built from logs that fall into the same bucket as the current data
+          const itemTime = new Date(item.createdAt).getTime();
+          return getAttemptIndexForTime(itemTime) === currentAttemptIdx;
+        });
+
         if (existingIdx >= 0) {
-          qualityAttemptDetails[existingIdx] = { attemptNo, ...currentDetail };
+          // Update the existing sequential attempt with the most recent live data
+          qualityAttemptDetails[existingIdx] = { ...qualityAttemptDetails[existingIdx], ...currentDetail };
         } else {
-          qualityAttemptDetails.push({ attemptNo, ...currentDetail });
+          // Add as a new sequential attempt
+          qualityAttemptDetails.push({ attemptNo: seqAttemptNo++, ...currentDetail });
         }
       }
 

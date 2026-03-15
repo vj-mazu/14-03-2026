@@ -93,7 +93,7 @@ const LotSelection: React.FC<LotSelectionProps> = ({ entryType, excludeEntryType
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const params: any = { status: 'QUALITY_CHECK', page, pageSize: PAGE_SIZE };
+      const params: any = { status: 'PENDING_LOT_SELECTION', page, pageSize: PAGE_SIZE };
 
       const dFrom = fFrom !== undefined ? fFrom : filterDateFrom;
       const dTo = fTo !== undefined ? fTo : filterDateTo;

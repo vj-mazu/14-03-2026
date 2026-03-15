@@ -186,7 +186,7 @@ class SampleEntryRepository {
       const key = String(status || '').toUpperCase();
       const aliases = {
         QUALITY_NEEDED: 'QUALITY_CHECK',
-        PENDING_LOT_SELECTION: 'LOT_SELECTION',
+        // PENDING_LOT_SELECTION: 'LOT_SELECTION', // Removed as it's handled explicitly below
         PENDING_COOKING_REPORT: 'COOKING_REPORT',
         PENDING_LOTS_PASSED: 'FINAL_REPORT',
         PENDING_ALLOTTING_SUPERVISOR: 'LOT_ALLOTMENT'
@@ -211,13 +211,22 @@ class SampleEntryRepository {
     if (requestedStatus === 'COOKING_BOOK') {
       // Only show entries currently pending cooking reports (or in RECHECK which stays in COOKING_REPORT status)
       where.workflowStatus = 'COOKING_REPORT';
-      where.lotSelectionDecision = { [Op.ne]: 'FAIL' };
+      // SUPPORT RECHECK: Allow entries where decision is null (reset during recheck) 
+      // OR legacy PASS_WITH_COOKING/SOLDOUT decisions
+      where.lotSelectionDecision = {
+        [Op.or]: [
+          { [Op.eq]: null },
+          { [Op.in]: ['PASS_WITH_COOKING', 'SOLDOUT'] }
+        ]
+      };
     } else if (requestedStatus === 'RESAMPLE_COOKING_BOOK') {
       // Resamples appear immediately in cooking book to allow concurrent work
       where.workflowStatus = {
         [Op.in]: ['STAFF_ENTRY', 'QUALITY_CHECK', 'COOKING_REPORT', 'LOT_ALLOTMENT']
       };
       where.lotSelectionDecision = 'FAIL';
+    } else if (requestedStatus === 'PENDING_LOT_SELECTION') {
+      where.workflowStatus = { [Op.in]: ['QUALITY_CHECK', 'LOT_SELECTION'] };
     } else if (requestedStatus === 'MILL_SAMPLE') {
       // Staff view: Mill Sample tab
       // Include normal STAFF_ENTRY and failed lots (resamples) that need new quality
@@ -355,7 +364,11 @@ class SampleEntryRepository {
     const activeStatus = requestedStatus || (roleStatusMap[role] && roleStatusMap[role].length === 1 ? roleStatusMap[role][0] : null);
     const statusesToInclude = requestedStatus === 'COOKING_BOOK' || requestedStatus === 'RESAMPLE_COOKING_BOOK'
       ? ['COOKING_REPORT']
-      : (requestedStatus === 'QUALITY_CHECK' && filters.entryType === 'RICE_SAMPLE' ? ['QUALITY_CHECK', 'COOKING_REPORT', 'LOT_SELECTION'] : (activeStatus ? [activeStatus] : []));
+      : (requestedStatus === 'QUALITY_CHECK' && filters.entryType === 'RICE_SAMPLE' 
+          ? ['QUALITY_CHECK', 'COOKING_REPORT', 'LOT_SELECTION'] 
+          : (requestedStatus === 'PENDING_LOT_SELECTION'
+              ? ['QUALITY_CHECK', 'LOT_SELECTION']
+              : (activeStatus ? [activeStatus] : [])));
 
     const include = this._buildIncludesForRole(role, statusesToInclude.length > 0 ? statusesToInclude[0] : null);
 

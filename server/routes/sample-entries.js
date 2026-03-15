@@ -86,6 +86,18 @@ const normalizeRaw = (value) => {
   return raw === '' ? null : raw;
 };
 
+const normalizeAuditMetadata = (metadata) => {
+  if (!metadata) return null;
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata);
+    } catch (error) {
+      return null;
+    }
+  }
+  return metadata;
+};
+
 const hasAlphaOrPositive = (value) => {
   if (value === undefined || value === null) return false;
   const raw = String(value).trim();
@@ -119,17 +131,23 @@ const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt
       return !!(status || doneBy || approvedBy);
     };
 
-    const latestRecheckLog = await SampleEntryAuditLog.findOne({
+    const transitionLogs = await SampleEntryAuditLog.findAll({
       where: {
         tableName: 'sample_entries',
         actionType: 'WORKFLOW_TRANSITION',
         recordId: sampleEntryId
       },
       order: [['createdAt', 'DESC']],
+      limit: 50,
       raw: true
     });
+    const latestRecheckLog = transitionLogs.find((log) => {
+      const meta = normalizeAuditMetadata(log?.metadata);
+      return meta?.recheckRequested === true;
+    });
+    const latestMeta = normalizeAuditMetadata(latestRecheckLog?.metadata) || null;
 
-    if (!latestRecheckLog?.metadata?.recheckRequested) {
+    if (!latestMeta?.recheckRequested) {
       return {
         recheckRequested: false,
         recheckType: null,
@@ -139,7 +157,8 @@ const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt
       };
     }
 
-    const recheckType = latestRecheckLog.metadata.recheckType || null;
+    const recheckType = latestMeta.recheckType || null;
+    const previousDecision = latestMeta.previousDecision || null;
     const recheckAt = latestRecheckLog.createdAt || null;
     const recheckTime = recheckAt ? new Date(recheckAt).getTime() : null;
     const qualityTime = qualityUpdatedAt ? new Date(qualityUpdatedAt).getTime() : null;
@@ -159,19 +178,21 @@ const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt
       recheckRequested = false;
     }
 
-    return {
-      recheckRequested,
-      recheckType,
-      recheckAt,
-      qualityPending: (recheckType === 'quality' || recheckType === 'both') ? !qualityDone : false,
-      cookingPending: (recheckType === 'cooking' || recheckType === 'both') ? !cookingDone : false
-    };
+      return {
+        recheckRequested,
+        recheckType,
+        recheckAt,
+        recheckPreviousDecision: previousDecision,
+        qualityPending: (recheckType === 'quality' || recheckType === 'both') ? !qualityDone : false,
+        cookingPending: (recheckType === 'cooking' || recheckType === 'both') ? !cookingDone : false
+      };
   } catch (error) {
     console.error('Non-critical error fetching recheck status:', error);
     return {
       recheckRequested: false,
       recheckType: null,
       recheckAt: null,
+      recheckPreviousDecision: null,
       qualityPending: false,
       cookingPending: false
     };
@@ -828,6 +849,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     result.recheckAt = recheckState.recheckAt;
     result.qualityPending = recheckState.qualityPending;
     result.cookingPending = recheckState.cookingPending;
+    result.recheckPreviousDecision = recheckState.recheckPreviousDecision;
 
     res.json(result);
   } catch (error) {
@@ -1459,7 +1481,8 @@ router.post('/:id/recheck', authenticateToken, async (req, res) => {
     const transitionMetadata = {
       recheckRequested: true,
       recheckType,
-      previousStatus: entry.workflowStatus
+      previousStatus: entry.workflowStatus,
+      previousDecision: entry.lotSelectionDecision || null
     };
 
     // 2. Transition workflow FIRST to mark the end of the current attempt in audit logs
@@ -1471,36 +1494,24 @@ router.post('/:id/recheck', authenticateToken, async (req, res) => {
       transitionMetadata
     );
 
+    // Reset lot selection decision for quality/both rechecks so previous FAIL doesn't persist
+    if (recheckType === 'quality' || recheckType === 'both') {
+      try {
+        await SampleEntry.update(
+          { lotSelectionDecision: null, lotSelectionAt: null },
+          { where: { id: entry.id } }
+        );
+      } catch (lsError) {
+        console.error('Non-critical error resetting lot selection during recheck:', lsError);
+      }
+    }
+
     // 3. Reset parameters AFTER transition to provide "Fresh Form" for the NEXT attempt
     if (recheckType === 'quality' || recheckType === 'both') {
       try {
         const qp = await QualityParameters.findOne({ where: { sampleEntryId: entry.id } });
         if (qp) {
-          const freshData = {
-            sampleEntryId: entry.id,
-            moisture: null, moistureRaw: null,
-            dryMoisture: null, dryMoistureRaw: null,
-            cutting1: null, cutting1Raw: null,
-            cutting2: null, cutting2Raw: null,
-            bend: null, 
-            bend1: null, bend1Raw: null,
-            bend2: null, bend2Raw: null,
-            mixS: null, mixSRaw: null,
-            mixL: null, mixLRaw: null,
-            mix: null, mixRaw: null,
-            kandu: null, kanduRaw: null,
-            oil: null, oilRaw: null,
-            sk: null, skRaw: null,
-            grainsCount: null, grainsCountRaw: null,
-            wbR: null, wbRRaw: null,
-            wbBk: null, wbBkRaw: null,
-            wbT: null, wbTRaw: null,
-            paddyWb: null, paddyWbRaw: null,
-            gramsReport: null,
-            reportedBy: null, 
-            uploadFileUrl: null
-          };
-          await QualityParametersService.updateQualityParameters(qp.id, freshData, req.user.userId, workflowRole);
+          await QualityParametersService.resetQualityParameters(entry.id, req.user.userId);
         }
       } catch (qpError) {
         console.error('Non-critical error resetting quality parameters during recheck:', qpError);
