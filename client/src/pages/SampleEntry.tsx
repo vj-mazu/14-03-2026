@@ -781,16 +781,10 @@ const SampleEntryPage: React.FC<{
         setQualityRecordExists(true);
         const qp = response.data.qualityParameters;
         
-        // If quality recheck is pending AND critical fields are null, treat as fresh form
+        // If quality recheck is pending, always open a fresh form
         const isQualityRecheckPending = response.data.qualityPending === true
           || (response.data.qualityPending == null && response.data.recheckRequested === true && response.data.recheckType !== 'cooking');
-        const isRecheckReset = isQualityRecheckPending && 
-                              qp.moisture === null && 
-                              qp.grainsCount === null && 
-                              qp.cutting1 === null && 
-                              qp.bend1 === null;
-
-        if (isRecheckReset) {
+        if (isQualityRecheckPending) {
           setQualityRecordExists(true); // Record exists but it's reset
           resetQualityForm();
           return;
@@ -1586,7 +1580,7 @@ const SampleEntryPage: React.FC<{
                                       </div>
                                     ) : isPaddyResampleWorkflow && entry.lotSelectionDecision === 'FAIL' && !entry.sampleCollectedBy ? (
                                       <span style={{ fontSize: '10px', fontWeight: 800, color: '#c62828' }}>Pending Supervisor Assignment</span>
-                                    ) : isCookingRecheckPending ? (
+                                    ) : isCookingRecheckPending && !isQualityRecheckPending ? (
                                       <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: '#e3f2fd', color: '#1565c0', borderRadius: '3px', fontWeight: '700', border: '1.5px solid #90caf9' }}>
                                         Cooking Recheck
                                       </span>
