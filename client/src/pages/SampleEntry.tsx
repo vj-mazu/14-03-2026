@@ -781,8 +781,10 @@ const SampleEntryPage: React.FC<{
         setQualityRecordExists(true);
         const qp = response.data.qualityParameters;
         
-        // If recheckRequested is true AND critical fields are null, treat as fresh form
-        const isRecheckReset = response.data.recheckRequested && 
+        // If quality recheck is pending AND critical fields are null, treat as fresh form
+        const isQualityRecheckPending = response.data.qualityPending === true
+          || (response.data.qualityPending == null && response.data.recheckRequested === true && response.data.recheckType !== 'cooking');
+        const isRecheckReset = isQualityRecheckPending && 
                               qp.moisture === null && 
                               qp.grainsCount === null && 
                               qp.cutting1 === null && 
@@ -1422,7 +1424,11 @@ const SampleEntryPage: React.FC<{
                               && qp
                               && getTimeValue(qp.updatedAt || qp.createdAt) >= getTimeValue(entry.lotSelectionAt);
                             const isPaddyResampleEntry = isPaddyResampleWorkflow && (!entry.lotSelectionAt || !resampleQualitySaved) && !!entry.sampleCollectedBy;
-                            const isRecheckEntry = (entry as any).recheckRequested === true;
+                            const isQualityRecheckPending = (entry as any).qualityPending === true
+                              || ((entry as any).qualityPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType !== 'cooking');
+                            const isCookingRecheckPending = (entry as any).cookingPending === true
+                              || ((entry as any).cookingPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType === 'cooking');
+                            const isRecheckEntry = isQualityRecheckPending;
                              const hasQuality = qp && Number(qp.moisture || 0) > 0 && (
                                (qp.cutting1 && Number(qp.cutting1) !== 0) ||
                                (qp.bend1 && Number(qp.bend1) !== 0) ||
@@ -1580,6 +1586,10 @@ const SampleEntryPage: React.FC<{
                                       </div>
                                     ) : isPaddyResampleWorkflow && entry.lotSelectionDecision === 'FAIL' && !entry.sampleCollectedBy ? (
                                       <span style={{ fontSize: '10px', fontWeight: 800, color: '#c62828' }}>Pending Supervisor Assignment</span>
+                                    ) : isCookingRecheckPending ? (
+                                      <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: '#e3f2fd', color: '#1565c0', borderRadius: '3px', fontWeight: '700', border: '1.5px solid #90caf9' }}>
+                                        Cooking Recheck
+                                      </span>
                                     ) : isPaddyResampleEntry && canEditQuality ? (
                                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-start' }}>
                                         <button

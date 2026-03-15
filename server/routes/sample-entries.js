@@ -100,8 +100,25 @@ const normalizeGramsReport = (value, fallback = '10gms') => {
   return value === '5gms' ? '5gms' : '10gms';
 };
 // ------------------------------------------
-const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt) => {
+const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt, qualitySnapshot = null, cookingSnapshot = null) => {
   try {
+    const hasQualityData = (qp) => {
+      if (!qp) return false;
+      const moisture = parseFloat(qp.moisture || 0);
+      const grains = parseFloat(qp.grainsCount || 0);
+      const cutting = parseFloat(qp.cutting1 || 0);
+      const bend = parseFloat(qp.bend1 || 0);
+      const mix = hasAlphaOrPositive(qp.mix) || hasAlphaOrPositive(qp.mixS) || hasAlphaOrPositive(qp.mixL);
+      return moisture > 0 && (grains > 0 || cutting > 0 || bend > 0 || mix);
+    };
+    const hasCookingData = (cr) => {
+      if (!cr) return false;
+      const status = String(cr.status || '').trim();
+      const doneBy = String(cr.cookingDoneBy || '').trim();
+      const approvedBy = String(cr.cookingApprovedBy || '').trim();
+      return !!(status || doneBy || approvedBy);
+    };
+
     const latestRecheckLog = await SampleEntryAuditLog.findOne({
       where: {
         tableName: 'sample_entries',
@@ -128,8 +145,8 @@ const getRecheckState = async (sampleEntryId, qualityUpdatedAt, cookingUpdatedAt
     const qualityTime = qualityUpdatedAt ? new Date(qualityUpdatedAt).getTime() : null;
     const cookingTime = cookingUpdatedAt ? new Date(cookingUpdatedAt).getTime() : null;
 
-    const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime);
-    const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime);
+    const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime) && hasQualityData(qualitySnapshot);
+    const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime) && hasCookingData(cookingSnapshot);
 
     let recheckRequested = true;
     if (recheckType === 'quality') {
@@ -805,10 +822,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const result = entry.toJSON ? entry.toJSON() : { ...entry };
     const qualityUpdatedAt = entry?.qualityParameters?.updatedAt || entry?.qualityParameters?.createdAt || null;
     const cookingUpdatedAt = entry?.cookingReport?.updatedAt || entry?.cookingReport?.createdAt || null;
-    const recheckState = await getRecheckState(req.params.id, qualityUpdatedAt, cookingUpdatedAt);
+    const recheckState = await getRecheckState(req.params.id, qualityUpdatedAt, cookingUpdatedAt, entry?.qualityParameters, entry?.cookingReport);
     result.recheckRequested = recheckState.recheckRequested;
     result.recheckType = recheckState.recheckType;
     result.recheckAt = recheckState.recheckAt;
+    result.qualityPending = recheckState.qualityPending;
+    result.cookingPending = recheckState.cookingPending;
 
     res.json(result);
   } catch (error) {
@@ -1057,6 +1076,8 @@ router.post('/:id/quality-parameters', authenticateToken, async (req, res) => {
           const recheckState = await getRecheckState(
             req.params.id,
             existingQuality?.updatedAt || existingQuality?.createdAt || null,
+            null,
+            existingQuality,
             null
           );
           const isRecheckQualityPending = recheckState.qualityPending === true;
@@ -1185,6 +1206,8 @@ router.put('/:id/quality-parameters', authenticateToken, async (req, res) => {
         const recheckState = await getRecheckState(
           sampleEntryId,
           existing?.updatedAt || existing?.createdAt || null,
+          null,
+          existing,
           null
         );
         const isRecheckQualityPending = recheckState.qualityPending === true;

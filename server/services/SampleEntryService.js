@@ -345,6 +345,10 @@ class SampleEntryService {
     if (result && Array.isArray(result.entries) && result.entries.length > 0) {
       const { attachLoadingLotsHistories } = require('../utils/historyUtil');
       result.entries = await attachLoadingLotsHistories(result.entries);
+      const requestedStatus = String(filters.status || '').toUpperCase();
+      if (requestedStatus === 'COOKING_BOOK' || requestedStatus === 'RESAMPLE_COOKING_BOOK') {
+        result.entries = result.entries.filter((entry) => !(entry.recheckRequested === true && entry.recheckType === 'quality'));
+      }
     }
     return result;
   }

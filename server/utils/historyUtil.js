@@ -1,6 +1,33 @@
 const { Op } = require('sequelize');
 const SampleEntryAuditLog = require('../models/SampleEntryAuditLog');
 
+const hasAlphaOrPositive = (value) => {
+  if (value === null || value === undefined) return false;
+  const raw = String(value).trim();
+  if (!raw) return false;
+  if (/[a-zA-Z]/.test(raw)) return true;
+  const num = parseFloat(raw);
+  return Number.isFinite(num) && num > 0;
+};
+
+const hasQualityData = (qp) => {
+  if (!qp) return false;
+  const moisture = parseFloat(qp.moisture || 0);
+  const grains = parseFloat(qp.grainsCount || 0);
+  const cutting = parseFloat(qp.cutting1 || 0);
+  const bend = parseFloat(qp.bend1 || 0);
+  const mix = hasAlphaOrPositive(qp.mix) || hasAlphaOrPositive(qp.mixS) || hasAlphaOrPositive(qp.mixL);
+  return moisture > 0 && (grains > 0 || cutting > 0 || bend > 0 || mix);
+};
+
+const hasCookingData = (cr) => {
+  if (!cr) return false;
+  const status = String(cr.status || '').trim();
+  const doneBy = String(cr.cookingDoneBy || '').trim();
+  const approvedBy = String(cr.cookingApprovedBy || '').trim();
+  return !!(status || doneBy || approvedBy);
+};
+
 const attachLoadingLotsHistories = async (rows) => {
   if (!Array.isArray(rows) || rows.length === 0) return rows;
 
@@ -131,8 +158,8 @@ const attachLoadingLotsHistories = async (rows) => {
       const qualityTime = qualityUpdatedAt ? new Date(qualityUpdatedAt).getTime() : null;
       const cookingTime = cookingUpdatedAt ? new Date(cookingUpdatedAt).getTime() : null;
 
-      const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime);
-      const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime);
+      const qualityDone = !!(qualityTime && recheckTime && qualityTime >= recheckTime) && hasQualityData(row?.qualityParameters);
+      const cookingDone = !!(cookingTime && recheckTime && cookingTime >= recheckTime) && hasCookingData(row?.cookingReport);
 
       let isPending = true;
       if (recheckType === 'quality') {
@@ -145,13 +172,20 @@ const attachLoadingLotsHistories = async (rows) => {
         isPending = false;
       }
 
+      const qualityPending = (recheckType === 'quality' || recheckType === 'both') ? !qualityDone : false;
+      const cookingPending = (recheckType === 'cooking' || recheckType === 'both') ? !cookingDone : false;
+
       target.recheckRequested = isPending;
       target.recheckType = isPending ? recheckType : null;
       target.recheckAt = isPending ? recheckAt : null;
+      target.qualityPending = isPending ? qualityPending : false;
+      target.cookingPending = isPending ? cookingPending : false;
     } else {
       target.recheckRequested = false;
       target.recheckType = null;
       target.recheckAt = null;
+      target.qualityPending = false;
+      target.cookingPending = false;
     }
     
     // Extract sampleCollectedBy history

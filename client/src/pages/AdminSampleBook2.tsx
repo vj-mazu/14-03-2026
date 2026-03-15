@@ -352,6 +352,8 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
     const cookingBadge = (entry: SampleEntry) => {
         const cr = entry.cookingReport;
         const d = entry.lotSelectionDecision;
+        const isCookingRecheckPending = (entry as any).cookingPending === true
+            || ((entry as any).cookingPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType === 'cooking');
         const history = Array.isArray(cr?.history) ? cr!.history : [];
         const latestEvent = history.length > 0 ? history[history.length - 1] : null;
         const doneByFromHistory = [...history].reverse().find((h) => h?.cookingDoneBy)?.cookingDoneBy || '';
@@ -360,7 +362,9 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const approvedBy = cr?.cookingApprovedBy || approvedByFromHistory || '';
         const eventDate = formatShortDateTime((latestEvent as any)?.date || null);
         const hasRemarks = !!(cr?.remarks && String(cr.remarks).trim());
-        const approvals = history.filter((h) => h?.status);
+        const approvals = history
+            .filter((h) => h?.status)
+            .sort((a, b) => new Date(a?.date || 0).getTime() - new Date(b?.date || 0).getTime());
         const staffAttempts = history.filter((h) => h?.cookingDoneBy && !h?.status);
         const isResampleFlow = d === 'FAIL';
         const pendingStaff = staffAttempts.length > approvals.length;
@@ -371,6 +375,10 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const isAttemptContext =
             isResampleFlow
             && (approvals.length > 1 || cookingAttempts > 1);
+
+        if (isCookingRecheckPending && !cr?.status) {
+            return <span style={{ background: '#e3f2fd', color: '#1565c0', padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>Recheck</span>;
+        }
 
         if (!isRiceBook && isAttemptContext) {
             const mapStatus = (status?: string | null) => {
@@ -389,29 +397,38 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 return { bg: '#ffe0b2', color: '#e65100' };
             };
 
-            const firstLabel = mapStatus(approvals[0]?.status || cr?.status || null);
-            const secondLabel = pendingStaff ? 'Pending' : mapStatus(approvals[1]?.status || null);
-            const firstStyle = getStyle(firstLabel);
-            const secondStyle = getStyle(secondLabel);
-            const firstRemark = String(approvals[0]?.remarks || cr?.remarks || '').trim();
+            const statusRows = approvals.map((row) => ({
+                label: mapStatus(row?.status || null),
+                remarks: String(row?.remarks || '').trim()
+            }));
+            if (statusRows.length === 0 && cr?.status) {
+                statusRows.push({ label: mapStatus(cr.status), remarks: String(cr.remarks || '').trim() });
+            }
+            if (pendingStaff) {
+                statusRows.push({ label: 'Pending', remarks: '' });
+            }
 
             return (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', width: '100%' }}>
-                    <span style={{ background: firstStyle.bg, color: firstStyle.color, padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>
-                        {firstLabel}
-                    </span>
-                    <span style={{ background: secondStyle.bg, color: secondStyle.color, padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>
-                        {secondLabel}
-                    </span>
-                    {firstRemark && (
-                        <button
-                            type="button"
-                            onClick={() => setRemarksPopup({ isOpen: true, text: firstRemark })}
-                            style={{ color: '#8e24aa', fontSize: '9px', fontWeight: '700', cursor: 'pointer', background: 'transparent', border: 'none', padding: 0 }}
-                        >
-                            Remarks
-                        </button>
-                    )}
+                    {statusRows.map((row, idx) => {
+                        const style = getStyle(row.label);
+                        return (
+                            <div key={`cook-status-${idx}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                <span style={{ background: style.bg, color: style.color, padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: '700' }}>
+                                    {row.label}
+                                </span>
+                                {row.remarks && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRemarksPopup({ isOpen: true, text: row.remarks })}
+                                        style={{ color: '#8e24aa', fontSize: '9px', fontWeight: '700', cursor: 'pointer', background: 'transparent', border: 'none', padding: 0 }}
+                                    >
+                                        Remarks
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             );
         }
@@ -502,7 +519,9 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const resampleAttempts = Math.max(0, Number(entry.qualityReportAttempts || 0));
         const cookingStatusKey = String(cr?.status || '').toUpperCase();
         const isCookingPassed = cookingStatusKey === 'PASS' || cookingStatusKey === 'MEDIUM';
-        const isRecheckRequested = (entry as any).recheckRequested === true;
+        const isQualityRecheckPending = (entry as any).qualityPending === true;
+        const isCookingRecheckPending = (entry as any).cookingPending === true;
+        const isRecheckRequested = isQualityRecheckPending || isCookingRecheckPending || (entry as any).recheckRequested === true;
         const isResampleInProgress = d === 'FAIL' && s !== 'FAILED' && !isCookingPassed && !entry.offering?.finalPrice && !isRecheckRequested;
         const showResampleRound = resampleAttempts > 1 && isResampleInProgress;
         const userStr = localStorage.getItem('user');
@@ -595,7 +614,8 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
         const attemptsCount = attemptsSorted.length > 0 ? attemptsSorted.length : Math.max(0, Number(entry.qualityReportAttempts || 0));
         const latestAttempt = attemptsSorted.length > 0 ? attemptsSorted[attemptsSorted.length - 1] : null;
         const d = entry.lotSelectionDecision;
-        const isRecheckRequested = (entry as any).recheckRequested === true;
+        const isQualityRecheckPending = (entry as any).qualityPending === true
+            || ((entry as any).qualityPending == null && (entry as any).recheckRequested === true && (entry as any).recheckType !== 'cooking');
 
         const getQualityType = (attempt: any) => {
             if (!attempt) return 'Pending';
@@ -618,13 +638,12 @@ const AdminSampleBook2: React.FC<AdminSampleBook2Props> = ({ entryType, excludeE
                 || hasAlphaOrPositiveValue(attempt.mixS)
                 || hasAlphaOrPositiveValue(attempt.mixL);
             const has100g = attempt.grainsCount != null && Number(attempt.grainsCount) !== 0;
-            const isPass = d === 'PASS_WITH_COOKING'
+            const isPassDecision = d === 'PASS_WITH_COOKING'
                 || d === 'PASS_WITHOUT_COOKING'
-                || d === 'SOLDOUT'
-                || (attemptsCount > 1 && (hasFullQuality || has100g));
-            if (isPass) return 'Pass';
-            if (isRecheckRequested) return 'Rechecking';
+                || d === 'SOLDOUT';
+            if (isQualityRecheckPending) return 'Rechecking';
             if (d === 'FAIL') return 'Fail';
+            if (isPassDecision) return 'Pass';
             return 'Pending';
         };
 

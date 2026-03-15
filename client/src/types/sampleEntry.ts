@@ -57,6 +57,8 @@ export interface SampleEntry {
   sampleCollectedHistory?: string[];
   recheckRequested?: boolean;
   recheckType?: 'quality' | 'cooking' | 'both' | null;
+  qualityPending?: boolean;
+  cookingPending?: boolean;
   recheckAt?: string | null;
   smellHas?: boolean;
   smellType?: string;
